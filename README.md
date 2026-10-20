@@ -1,10 +1,72 @@
 # Story Script RAG
 
-Local, free RAG for writing first-person YouTube story scripts (horror, history mysteries, fantasy, Cthulhu).
-LLM on GPU via Ollama; embeddings/reranker/ChromaDB/BM25 on CPU.
+Local, offline RAG system that writes first-person YouTube story scripts (horror, history mysteries, fantasy,
+Cthulhu, or any genre you name) at a chosen length of 5, 10, 15 or 20 minutes. Everything is free and runs on one
+consumer GPU (built and measured on an RTX 5060 Ti 16 GB, peak VRAM under 14.5 GB). The LLM runs on the GPU through
+Ollama; embeddings, ChromaDB and BM25 run on the CPU.
+
+## How it works
+```mermaid
+flowchart LR
+    B[Brief + genre] --> H[3 hook options]
+    H --> O[Outline: 7 beats, word budgets]
+    O --> W[Write each beat]
+    R[(Hybrid retrieval<br/>Chroma + BM25 + RRF<br/>style / lore / hooks)] --> W
+    W --> P[Polish each beat]
+    P --> D[Repeat guard]
+    D --> F[Length fit to +/-10%]
+    F --> V[Verify facts<br/>grounded genres]
+    V --> M[Markdown: titles, thumbnails,<br/>script, chapters, tags, checks]
+```
+- **Three collections:** `scripts` (style examples), `lore` (facts) and `hooks`. Each is searched with dense vectors
+  (bge-m3) and BM25, merged by reciprocal rank fusion, filtered by genre and by story beat.
+- **Section by section:** the outline gives every beat a word budget; each beat is written with a rolling summary
+  and the unused budget of earlier beats, then polished on its own. A whole-script polish made the 12B model loop,
+  so it is not used.
+- **Grounded history:** for fact-based genres the model tags facts `[S#]` (the lore chunk they came from) and wraps
+  anything it invents as `{{INVENTED: ...}}`. A Verify step re-checks the sentences the code flags against the lore.
+- **Guards:** repeated paragraphs and sentences are removed, the final length is steered to within 10% of the target,
+  and passages with over 80% 5-gram overlap with a source are flagged.
+
+## Results
+Measured on this machine (gemma3:12b, num_ctx 16384). These are single runs; quality metrics swing a few points.
+
+| Check | Result |
+|---|---|
+| Retrieval, 14 briefs (`cli.py eval --retrieval-only`) | right source at top 1: 0.90, top 3: 0.95, top 10: 0.95 |
+| Three 5-min scripts (history / cthulhu / horror), target 750 words | 780 / 824 / 783 words, accuracy 96.0% / 90.1% / 95.6% |
+| Repeated 4-grams in those scripts | 4.2% / 0.7% / 4.4% |
+| Speed | about 4 min per 5-min script; generation is decode-bound at ~40 tokens/s |
+| Polish stage with `OLLAMA_NUM_PARALLEL=2` | 18.7 s down to 12.0 s, peak GPU 11.8 to 13.3 GB |
+| Offline tests (no GPU, no Ollama) | 38 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
+
+Unedited excerpt (history, "The Mary Celeste", `{{INVENTED}}` marks details the lore does not support):
+> The ship's bell felt strangely cold in my hand [S1]. I am cataloging artifacts from the *Mary Celeste* now [S1].
+> {{INVENTED: Records show Captain Briggs last touched it.}} Why would someone abandon a ship in perfect condition?
+
+## Design decisions (what I tested and why)
+- **Cross-encoder reranker: off.** A MiniLM reranker gave no ranking gain and was 5x slower on CPU.
+- **Parallel polish: 2 workers, not 3.** Three workers reached 14.8 GB VRAM, over the 14.5 GB budget.
+- **Per-beat polish instead of whole-script polish.** The whole-script call made the model repeat paragraphs.
+- **Repeats are guarded by tests, not hope.** A fake-LLM test re-tells earlier scenes and fails if any repeat reaches
+  the script. A second test proves the guard can fail (it breaks the dedupe on purpose).
+- **Length control accepts a rewrite only if it moves toward the target and adds no repeats.**
+- **Models:** gemma3:12b (writing) and BAAI/bge-m3 (embeddings). Models are not included; each has its own licence.
+
+## Limitations
+- Single user, single machine; no concurrency design beyond the polish step.
+- Retrieval is judged on 14 briefs; script quality on the 3-brief check plus reading, not a user study.
+- Average sentence length is about 7-8 words (target 10-15), so narration can sound choppy; read aloud before recording.
+- History facts come from a small set of lore notes (6 topics). Fact-check every `{{INVENTED}}` mark and the
+  Checks section before publishing.
+- The books and scripts used as style data are **not** in this repository (see below).
 
 ## Setup
 Needs Python 3.11 or 3.12 and Ollama (https://ollama.com).
+
+**Data is not included.** Put your own `.txt .md .docx .pdf .epub` files in `data/<genre>/` (for example
+`data/horror/`), name fact notes `lore_*.md`, then run `python cli.py ingest`. See "Adding your material" below.
+Use only text you have the right to use.
 
 Windows PowerShell:
 ```powershell
@@ -22,6 +84,7 @@ python cli.py hooks "A lighthouse keeper finds extra footprints" --genre horror
 python cli.py write "The lost colony of Roanoke" --genre history --minutes 10 --hook 2
 python cli.py write "A tech finds the ship AI is lying" --genre sci-fi --style "wry, practical details" --minutes 5
 python app.py                                          # Gradio UI at http://127.0.0.1:7860
+python main.py                                         # optional HTTP service on :8000 (/vector_store/query, /vector_store/insert) for the StoryForge pipeline
 python cli.py eval [--retrieval-only]                  # 14 briefs in eval/briefs.yaml (also prints top-1/3/10 source ranks)
 python cli.py eval --compare-rerank [MODEL]            # retrieval only: reranker off vs on, with timing
 python -m eval.rerun3 <label>                          # 3 real 5-minute scripts -> output/<label>/ (about 13 min)

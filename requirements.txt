@@ -1,9 +1,12 @@
-chromadb>=0.5
-sentence-transformers>=3.0   # pulls torch (CPU build is enough; embeddings/reranker run on CPU)
-rank_bm25>=0.2.2
-ollama>=0.5                  # needs the `think` option
-gradio>=4.40
-pyyaml
-python-docx
-pypdf
-psutil
+# Versions the tests and measurements were run with (Python 3.12).
+chromadb==1.5.9
+sentence-transformers==6.1.0   # pulls torch (CPU build is enough; embeddings/reranker run on CPU)
+rank_bm25==0.2.2
+ollama==0.6.3                  # needs the `think` option
+gradio==6.30.0
+fastapi==0.143.2               # main.py service (gradio also installs it)
+uvicorn==0.54.0
+pyyaml==6.0.3
+python-docx==1.2.0
+pypdf==6.20.1
+psutil==7.2.2
