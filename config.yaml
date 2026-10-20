@@ -1,0 +1,46 @@
+# All paths are relative to the project root.
+paths:
+  data_dir: data
+  chroma_dir: .chroma
+  state_file: .chroma/ingest_state.json   # file hashes + cached LLM tags
+  output_dir: output
+  prompts_dir: prompts
+  banned_phrases: banned_phrases.txt
+
+llm:
+  host: http://localhost:11434
+  model: gemma3:12b         # swap: qwen3:14b, mistral-nemo, ...
+  num_ctx: 16384
+  min_ctx: 4096             # OOM retry halves num_ctx down to this
+  temperature: 0.8
+  repeat_penalty: 1.1       # curbs the looping 14B models fall into on long prose
+  think_outline: true       # qwen3 thinking only for the outline stage; off elsewhere
+  keep_alive: 10m
+  parallel: 2               # polish calls in flight at once; raise only together with OLLAMA_NUM_PARALLEL (see README)
+
+embedding:
+  model: BAAI/bge-m3
+  device: cpu
+
+reranker:
+  enabled: false
+  model: BAAI/bge-reranker-v2-m3
+  device: cpu
+
+retrieval:
+  candidates: 30            # per retriever (dense, BM25) before fusion
+  rrf_k: 60
+  final_k: 4                # chunks passed to the LLM per collection
+
+chunking:
+  min_tokens: 300
+  max_tokens: 500
+  overlap: 0.15
+
+script:
+  wpm: 150
+
+checks:
+  ngram: 5
+  overlap_threshold: 0.8    # flag passages whose 5-grams are >80% present in a source chunk
+  repeated_ngram: 4         # repeated-phrase rate uses this n

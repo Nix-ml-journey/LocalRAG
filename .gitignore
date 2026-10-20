@@ -1,0 +1,11 @@
+.venv/
+.chroma/
+.pytest_cache/
+__pycache__/
+output/
+.claude-flow/
+*.epub
+*.pdf
+
+# books and training text are not redistributable
+data/

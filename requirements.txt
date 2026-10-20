@@ -1,0 +1,9 @@
+chromadb>=0.5
+sentence-transformers>=3.0   # pulls torch (CPU build is enough; embeddings/reranker run on CPU)
+rank_bm25>=0.2.2
+ollama>=0.5                  # needs the `think` option
+gradio>=4.40
+pyyaml
+python-docx
+pypdf
+psutil

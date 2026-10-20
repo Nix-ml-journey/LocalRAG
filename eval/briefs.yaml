@@ -1,0 +1,70 @@
+- id: b01
+  genre: horror
+  minutes: 10
+  brief: A night security guard at an empty parking garage keeps receiving tickets from a machine that prints them by itself.
+  expect_sources: [horror_night_shift]
+- id: b02
+  genre: horror
+  minutes: 5
+  brief: A lighthouse keeper realizes someone else has been writing in the logbook and walking the stairs behind him.
+  expect_sources: [horror_lighthouse_log]
+- id: b03
+  genre: history
+  minutes: 15
+  brief: A researcher investigates why the Mary Celeste was found drifting with nobody aboard in 1872.
+  expect_sources: [lore_mary_celeste, history_mary_celeste_archive]
+- id: b04
+  genre: history
+  minutes: 10
+  brief: A visitor to Roanoke Island reflects on the vanished colony and the word carved on a post.
+  expect_sources: [lore_roanoke, history_roanoke_visit]
+- id: b05
+  genre: history
+  minutes: 20
+  brief: Compare the Mary Celeste and the Roanoke colony as two famous unsolved disappearances, from the view of an archivist.
+  expect_sources: [lore_mary_celeste, lore_roanoke]
+- id: b06
+  genre: fantasy
+  minutes: 10
+  brief: A marsh warden guides a nervous clerk across tidal flats and finds a light that should not be there.
+  expect_sources: [lore_saltmarch, fantasy_salt_warden]
+- id: b07
+  genre: fantasy
+  minutes: 15
+  brief: An aging mapmaker is hired to draw a road that rewrites itself, and learns what each true line costs him.
+  expect_sources: [fantasy_ember_cartographer]
+- id: b08
+  genre: cthulhu
+  minutes: 10
+  brief: A 1920s ocean surveyor plots odd soundings that form the outline of a drowned city.
+  expect_sources: [cthulhu_survey_log, lore_call_of_cthulhu]
+- id: b09
+  genre: cthulhu
+  minutes: 5
+  brief: A library cataloguer receives a box of letters whose last page should never be read.
+  expect_sources: [cthulhu_archive_letters]
+- id: b10
+  genre: horror
+  minutes: 20
+  brief: A man discovers that his own handwriting appears in letters he never wrote, dated decades before he was born.
+  expect_sources: [hooks_openers, horror_lighthouse_log]
+- id: b11
+  genre: history
+  minutes: 10
+  brief: A lighthouse inspector investigates why three keepers vanished from the Flannan Isles in December 1900 and left the door closed behind them.
+  expect_sources: [lore_flannan_isles]
+- id: b12
+  genre: history
+  minutes: 15
+  brief: A mountaineering historian retraces the last camp of nine hikers on Kholat Syakhl in the Ural Mountains in 1959.
+  expect_sources: [lore_dyatlov_pass]
+- id: b13
+  genre: history
+  minutes: 15
+  brief: An Arctic archivist studies the note found at Victory Point and what happened to the crews of Erebus and Terror.
+  expect_sources: [lore_franklin_expedition]
+- id: b14
+  genre: history
+  minutes: 10
+  brief: A city clerk in Strasbourg records the summer of 1518 when people danced in the streets for days.
+  expect_sources: [lore_dancing_plague_1518]
