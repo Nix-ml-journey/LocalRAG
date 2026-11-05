@@ -112,20 +112,25 @@ class Pipeline:
         # models write 3-5x a small word budget, so cap generation (about 1.4 tokens per word, 1.5x the budget)
         # and cut the unfinished last sentence
         cap = int(b["words"] * 1.8) + 40
-        text = self._whole_sentences(self.llm.chat(prompt, max_tokens=cap))
+        text = self._clean(self._whole_sentences(self.llm.chat(prompt, max_tokens=cap)))
         problems = self._problems(text, b, earlier, grounded)
         if problems:  # one corrective retry
             log.info("retry '%s': %s", b["beat"], "; ".join(p[:60] for p in problems))
-            text = self._whole_sentences(self.llm.chat(
+            text = self._clean(self._whole_sentences(self.llm.chat(
                 prompt + "\n\nPrevious attempt:\n" + text + "\n\nRewrite it; " + "; ".join(problems) + ".",
-                max_tokens=cap))
+                max_tokens=cap)))
         return text
+
+    @staticmethod
+    def _clean(text):
+        """Remove bracketed notes the model invented (e.g. "[recurring]"); only real cues and [S#] tags stay."""
+        return re.sub(r"[ 	]*\[(?!(?:PAUSE|SFX:|B-ROLL:|S\d+\]))[^\]]*\]", "", text, flags=re.I)
 
     @staticmethod
     def _whole_sentences(text):
         """Drop a trailing half-sentence left by the token cap (kept as is when it would lose over half the text)."""
         text = text.rstrip()
-        if re.search(r"[.!?…\"”’')]}]$", text):
+        if re.search(r"[.!?…\"”’')\]}]$", text):
             return text
         m = re.search(r"^(.*[.!?…][\"”’')\]}]*)", text, re.S)  # greedy: up to the last sentence end
         return m.group(1) if m and len(m.group(1)) > len(text) / 2 else text

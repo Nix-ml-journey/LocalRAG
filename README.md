@@ -38,7 +38,8 @@ Measured on this machine (gemma3:12b, num_ctx 16384). These are single runs; qua
 | Repeated 4-grams in those scripts | 4.2% / 0.7% / 4.4% |
 | Speed | about 4 min per 5-min script; generation is decode-bound at ~40 tokens/s |
 | Polish stage with `OLLAMA_NUM_PARALLEL=2` | 18.7 s down to 12.0 s, peak GPU 11.8 to 13.3 GB |
-| Offline tests (no GPU, no Ollama) | 38 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
+| Fantasy 5-min script, two runs after the prompt and length tuning (target 750) | 791 / 764 words, accuracy 94.5% / 98.1%, repeats 5.6% / 2.5%, sentences 13.2 / 12.5 words |
+| Offline tests (no GPU, no Ollama) | 39 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
 
 Unedited excerpt (history, "The Mary Celeste", `{{INVENTED}}` marks details the lore does not support):
 > The ship's bell felt strangely cold in my hand [S1]. I am cataloging artifacts from the *Mary Celeste* now [S1].
@@ -51,6 +52,10 @@ Unedited excerpt (history, "The Mary Celeste", `{{INVENTED}}` marks details the 
 - **Repeats are guarded by tests, not hope.** A fake-LLM test re-tells earlier scenes and fails if any repeat reaches
   the script. A second test proves the guard can fail (it breaks the dedupe on purpose).
 - **Length control accepts a rewrite only if it moves toward the target and adds no repeats.**
+- **Sentence length needs an example, not another rule.** Five prompts already asked for 10-15 words and the model wrote 7.9. A before/after example plus a reason and a self-check moved it to about 12-13.
+- **Cap section generation at about 1.8 tokens per word of budget.** The model wrote 3-5x small budgets, so retries and polish could not recover. The cap plus trimming the unfinished sentence brought scripts to 764-791 words.
+- **The rolling summary is labelled "already told".** It was labelled "Summary" and the model retold it; relabelling cut repeated phrases from 8.8% to 2.2% in one run.
+- **Invented bracket notes are stripped.** Only `[PAUSE]`, `[SFX:]`, `[B-ROLL:]` and `[S#]` survive.
 - **Models:** gemma3:12b (writing) and BAAI/bge-m3 (embeddings). Models are not included; each has its own licence.
 
 ## Limitations

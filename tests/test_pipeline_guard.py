@@ -90,3 +90,11 @@ def test_guard_has_teeth(tmp_path, monkeypatch):
     script = run(tmp_path)
     assert script.lower().count("pallet out of place") > 1
     assert checks.repeated_rate(script, 4) > 0.2
+
+
+def test_clean_strips_invented_brackets_but_keeps_cues():
+    from ragscript.pipeline import Pipeline
+    t = "I sharpened my quill [recurring]. [PAUSE] Wind rose [SFX: wind] over the fort [S2] [B-ROLL: the fort]."
+    out = Pipeline._clean(t)
+    assert "[recurring]" not in out
+    assert all(c in out for c in ("[PAUSE]", "[SFX: wind]", "[S2]", "[B-ROLL: the fort]"))

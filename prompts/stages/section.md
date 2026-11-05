@@ -32,6 +32,7 @@ Rhythm example (shows sentence length only; never copy its wording or content):
 Too choppy: The door was old. It creaked. I pushed it open. Dust fell. The room was dark. I stepped inside.
 Right: The old door creaked as I pushed it open, and a thin curtain of dust drifted down past the lantern light. I stepped into the dark room. Nothing moved.
 Join an action to its detail with "and", "as", "while" or "because" instead of a full stop. Most sentences should land between 10 and 18 words.
+- The only square-bracket items allowed are the cues below and [S#] lore tags. Never write other bracketed notes such as [recurring] or [detail].
 - Use cues on their own line where useful: [PAUSE], [SFX: description], [B-ROLL: description].
 - If the genre rules contain a GROUNDED rule, obey it strictly (facts only from the lore chunks, invented details wrapped as {{INVENTED: ...}}).
 - Every sentence must add something new: an action, a detail or a thought. Never restate what was already said, in this section or in earlier ones.
