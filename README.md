@@ -62,7 +62,7 @@ Unedited excerpt (history, "The Mary Celeste", `{{INVENTED}}` marks details the 
 - The books and scripts used as style data are **not** in this repository (see below).
 
 ## Setup
-Needs Python 3.11 or 3.12 and Ollama (https://ollama.com).
+Needs Python 3.11 to 3.13 (tests also pass on 3.13) and Ollama (https://ollama.com).
 
 **Data is not included.** Put your own `.txt .md .docx .pdf .epub` files in `data/<genre>/` (for example
 `data/horror/`), name fact notes `lore_*.md`, then run `python cli.py ingest`. See "Adding your material" below.

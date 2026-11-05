@@ -1,5 +1,5 @@
 # Windows PowerShell: .\setup.ps1
-py -3.12 -m venv .venv
+py -3 -m venv .venv   # any installed Python 3.11-3.13
 .\.venv\Scripts\python.exe -m pip install -U pip
 # CPU-only torch keeps the install small; the GPU is used by Ollama only
 .\.venv\Scripts\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cpu
