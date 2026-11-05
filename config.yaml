@@ -16,7 +16,7 @@ llm:
   repeat_penalty: 1.1       # curbs the looping 14B models fall into on long prose
   think_outline: true       # qwen3 thinking only for the outline stage; off elsewhere
   keep_alive: 10m
-  parallel: 2               # polish calls in flight at once; raise only together with OLLAMA_NUM_PARALLEL (see README)
+  parallel: 1               # polish calls in flight at once; raise only together with OLLAMA_NUM_PARALLEL (see README)
 
 embedding:
   model: BAAI/bge-m3

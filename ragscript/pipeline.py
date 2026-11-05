@@ -111,7 +111,7 @@ class Pipeline:
     def _write_section(self, prompt, b, earlier, grounded):
         # models write 3-5x a small word budget, so cap generation (about 1.4 tokens per word, 1.5x the budget)
         # and cut the unfinished last sentence
-        cap = int(b["words"] * 2.1) + 40
+        cap = int(b["words"] * 1.8) + 40
         text = self._whole_sentences(self.llm.chat(prompt, max_tokens=cap))
         problems = self._problems(text, b, earlier, grounded)
         if problems:  # one corrective retry
