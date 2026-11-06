@@ -1,5 +1,5 @@
 """Quick regression run: 3 fixed 5-minute briefs (history, cthulhu, horror) -> output/<label>/ + a stats table.
-Usage: python -m eval.rerun3 <label>      (about 13 minutes with gemma3:12b)"""
+Usage: python -m eval.rerun3 <label>      (several minutes per script)"""
 import json
 import shutil
 import sys

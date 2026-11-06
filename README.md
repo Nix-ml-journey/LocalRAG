@@ -29,7 +29,7 @@ flowchart LR
   and passages with over 80% 5-gram overlap with a source are flagged.
 
 ## Results
-Measured on this machine (gemma3:12b, num_ctx 16384). These are single runs; quality metrics swing a few points.
+Measured on this machine (num_ctx 16384). Rows other than the fantasy row were measured on an earlier model, before the switch to gemma4:12b. These are single runs; quality metrics swing a few points.
 
 | Check | Result |
 |---|---|
@@ -38,7 +38,7 @@ Measured on this machine (gemma3:12b, num_ctx 16384). These are single runs; qua
 | Repeated 4-grams in those scripts | 4.2% / 0.7% / 4.4% |
 | Speed | about 4 min per 5-min script; generation is decode-bound at ~40 tokens/s |
 | Polish stage with `OLLAMA_NUM_PARALLEL=2` | 18.7 s down to 12.0 s, peak GPU 11.8 to 13.3 GB |
-| Fantasy 5-min script, two runs after the prompt and length tuning (target 750) | 791 / 764 words, accuracy 94.5% / 98.1%, repeats 5.6% / 2.5%, sentences 13.2 / 12.5 words |
+| Fantasy 5-min script, two runs on gemma4:12b (target 750) | 753 / 762 words, accuracy 99.6% / 98.4%, repeats 0.3% / 1.6%, sentences 14.8 / 14.9 words, 407-695 s each, peak VRAM 10.7 GB |
 | Offline tests (no GPU, no Ollama) | 39 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
 
 Unedited excerpt (history, "The Mary Celeste", `{{INVENTED}}` marks details the lore does not support):
@@ -56,7 +56,8 @@ Unedited excerpt (history, "The Mary Celeste", `{{INVENTED}}` marks details the 
 - **Cap section generation at about 1.8 tokens per word of budget.** The model wrote 3-5x small budgets, so retries and polish could not recover. The cap plus trimming the unfinished sentence brought scripts to 764-791 words.
 - **The rolling summary is labelled "already told".** It was labelled "Summary" and the model retold it; relabelling cut repeated phrases from 8.8% to 2.2% in one run.
 - **Invented bracket notes are stripped.** Only `[PAUSE]`, `[SFX:]`, `[B-ROLL:]` and `[S#]` survive.
-- **Models:** gemma3:12b (writing) and BAAI/bge-m3 (embeddings). Models are not included; each has its own licence.
+- **gemma4:12b is the writing model.** In a same-brief test against the model it replaced it had better accuracy, fewer repeats and lower peak VRAM (10.7 GB), and more concrete prose, but it is 2-3x slower (407-695 s per 5-min script). Sentences run long at 14.8-14.9 words.
+- **Models:** gemma4:12b (writing) and BAAI/bge-m3 (embeddings). Models are not included; each has its own licence.
 
 ## Limitations
 - Single user, single machine; no concurrency design beyond the polish step.
@@ -75,7 +76,7 @@ Use only text you have the right to use.
 
 Windows PowerShell:
 ```powershell
-.\setup.ps1                  # venv, CPU torch, requirements, ollama pull gemma3:12b
+.\setup.ps1                  # venv, CPU torch, requirements, ollama pull gemma4:12b
 .\.venv\Scripts\Activate.ps1
 ```
 Linux: `bash setup.sh && source .venv/bin/activate`
@@ -120,7 +121,7 @@ Drop files (`.txt .md .docx .pdf .epub .srt .vtt`) in `data/<genre>/` (e.g. `hor
 - `config.yaml`: model, `num_ctx`, retrieval sizes, reranker on/off (`reranker.enabled`), words per minute, thresholds.
 - `prompts/<genre>.md` genre rules; `prompts/stages/*.md` stage templates (placeholders look like `<<name>>`).
 - `banned_phrases.txt`: one phrase per line; used in the prompts and checked after generation (one rewrite attempt, then listed in Checks).
-- Swap model: `ollama pull mistral-nemo` then set `llm.model: mistral-nemo` (or `gemma3:12b`). Models without thinking support are detected automatically.
+- Swap model: `ollama pull mistral-nemo` then set `llm.model: mistral-nemo`. Models without thinking support are detected automatically.
 
 ## History scripts and fact-checking
 Facts must come from retrieved lore chunks (`[S#]`). Anything the model invents is wrapped as `{{INVENTED: …}}` and listed under Checks → *Invented details*. This reduces but cannot eliminate invention: fact-check before publishing. The sample lore notes were written from memory, so verify them too.
@@ -132,7 +133,7 @@ After polishing, the code collects sentences that name something (a name, date o
 Passages with >80% 5-gram overlap with a retrieved source chunk are flagged; word-count accuracy; repeated-phrase rate; banned-phrase hits.
 
 ## Optional: parallel polish (small speed-up)
-The per-section polish calls are independent. To run 2 at once: set the Ollama server variable `OLLAMA_NUM_PARALLEL=2` (PowerShell: `[Environment]::SetEnvironmentVariable("OLLAMA_NUM_PARALLEL","2","User")`, then quit and restart Ollama) **and** set `llm.parallel: 2` in `config.yaml`. Measured with gemma3:12b: polish 18.7 s → 12.0 s, peak GPU 11.8 → 13.3 GB. 3 workers reached 14.8 GB, over the 14.5 GB budget. Undo with `SetEnvironmentVariable("OLLAMA_NUM_PARALLEL",$null,"User")`.
+The per-section polish calls are independent. To run 2 at once: set the Ollama server variable `OLLAMA_NUM_PARALLEL=2` (PowerShell: `[Environment]::SetEnvironmentVariable("OLLAMA_NUM_PARALLEL","2","User")`, then quit and restart Ollama) **and** set `llm.parallel: 2` in `config.yaml`. Measured on an earlier model: polish 18.7 s → 12.0 s, peak GPU 11.8 → 13.3 GB. 3 workers reached 14.8 GB, over the 14.5 GB budget. Undo with `SetEnvironmentVariable("OLLAMA_NUM_PARALLEL",$null,"User")`.
 
 ## VRAM troubleshooting
 Every stage logs VRAM/RAM (`nvidia-smi` + psutil) and warns above 14.5 GB. On an out-of-memory error the LLM wrapper halves `num_ctx` (down to `llm.min_ctx`) and retries, and retrieval shrinks with it.

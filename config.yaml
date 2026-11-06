@@ -9,7 +9,7 @@ paths:
 
 llm:
   host: http://localhost:11434
-  model: gemma3:12b         # swap: qwen3:14b, mistral-nemo, ...
+  model: gemma4:12b         # swap: qwen3:14b, mistral-nemo, ...
   num_ctx: 16384
   min_ctx: 4096             # OOM retry halves num_ctx down to this
   temperature: 0.8
