@@ -268,7 +268,9 @@ class Pipeline:
             script = re.sub(r"[ \t]*\[S\d+\]", "", script)
         if g.grounded and cited_text:
             # Verify step: ask the model about only the sentences the code flagged, with the lore as sole evidence
-            flagged = checks.uncited_facts(script) + [s for s, _ in checks.unsupported_cites(script, cited_text)]
+            # a [S1] tag proves nothing: the model also cites invented claims, so every cited sentence is checked too
+            flagged = (checks.uncited_facts(script) + [s for s, _ in checks.unsupported_cites(script, cited_text)]
+                       + [s for s in re.split(checks.SENT, script) if re.search(r"\[S\d+\]", s)])
 
             def supported(s):
                 sw = set(checks.words(s))  # the 12 chunks sharing most words with the sentence, so its source is in
@@ -277,7 +279,7 @@ class Pipeline:
                 return not ans.strip().upper().startswith("NO")  # an unclear answer leaves the sentence alone
 
             stage("Verifying…")
-            script, marked = checks.mark_invented(script, flagged, supported)
+            script, marked = checks.mark_invented(script, flagged, supported, limit=40)
             if marked:
                 notes.append(f"Verify step marked {marked} unsupported sentence(s) as INVENTED.")
 

@@ -5,7 +5,8 @@ from collections import Counter
 CUE = re.compile(r"\[[^\]]*\]")
 QUOTE = re.compile(r"[“\"]([^”\"]{6,})[”\"]")  # a quoted phrase of 6+ characters
 # sentence boundary; a [S#] tag after the full stop stays with its sentence, and the tag itself ends one
-SENT = r"(?<=[.!?”\"\]])\s+(?!\[S\d)"
+# an initial ("J. Habakuk") or a title ("Dr. Smith") is not a sentence end
+SENT = r"(?<=[.!?”\"\]])(?<!\b[A-Z]\.)(?<!\bMr\.)(?<!\bDr\.)(?<!\bSt\.)(?<!\bMrs\.)(?<!\bCapt\.)\s+(?!\[S\d)"
 
 
 def words(t: str):
@@ -142,6 +143,8 @@ def mark_invented(script, sentences, is_supported, limit=12):
     Returns (script, number marked). Capped at `limit` checks to bound the number of LLM calls."""
     n = 0
     for s in list(dict.fromkeys(sentences))[:limit]:
+        if "{{" in s or "}}" in s:  # already marked, or half of a mark that spans sentences: wrapping again would nest
+            continue
         if s in script and not is_supported(s):
             script = script.replace(s, "{{INVENTED: " + re.sub(r"\s*\[S\d+\]", "", s) + "}}", 1)
             n += 1
