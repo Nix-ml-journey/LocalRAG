@@ -58,7 +58,15 @@ Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks 
 - **The rolling summary is labelled "already told".** It was labelled "Summary" and the model retold it; relabelling cut repeated phrases from 8.8% to 2.2% in one run.
 - **Invented bracket notes are stripped.** Only `[PAUSE]`, `[SFX:]`, `[B-ROLL:]` and `[S#]` survive.
 - **gemma4:12b is the writing model.** In a same-brief test against the model it replaced it had better accuracy, fewer repeats and lower peak VRAM (10.7 GB), and more concrete prose, but it is 2-3x slower (407-695 s per 5-min script). Sentences run long at 14.8-14.9 words.
+- **One sentence splitter.** Two checks once split sentences differently, so "J. Habakuk" counted as two sentences and a mid-sentence `[S1]` tag cut a claim in half before Verify judged it. All checks now share `checks.sentences()`.
 - **Models:** gemma4:12b (writing) and BAAI/bge-m3 (embeddings). Models are not included; each has its own licence.
+
+## Code layout
+- `ragscript/pipeline.py`: the stages (hooks, outline, write, polish, length fit, package). `verify.py` is the Verify step, `sources.py` numbers the cited chunks.
+- `ragscript/checks.py`: every pure text check (repeats, overlap, citations, length). `checks.sentences()` is the only sentence splitter.
+- `ragscript/store.py` + `retrieve.py`: Chroma/BM25 index and hybrid search. `chunking.py`, `loaders.py`, `metadata.py` feed `ingest`.
+- `ragscript/llm.py` (Ollama, OOM retry), `genre.py`, `render.py`, `vram.py`. Entry points: `cli.py`, `app.py`, `main.py`.
+- `config.yaml` holds every tuning number (`length:`, `checks:`); `prompts/` holds the stage and genre prompts.
 
 ## Limitations
 - Single user, single machine; no concurrency design beyond the polish step.
