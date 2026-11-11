@@ -9,14 +9,14 @@ paths:
 
 llm:
   host: http://localhost:11434
-  model: gemma3:12b         # swap: qwen3:14b, mistral-nemo, ...
+  model: gemma4:12b         # swap: qwen3:14b, mistral-nemo, ...
   num_ctx: 16384
   min_ctx: 4096             # OOM retry halves num_ctx down to this
   temperature: 0.8
   repeat_penalty: 1.1       # curbs the looping 14B models fall into on long prose
   think_outline: true       # qwen3 thinking only for the outline stage; off elsewhere
   keep_alive: 10m
-  parallel: 2               # polish calls in flight at once; raise only together with OLLAMA_NUM_PARALLEL (see README)
+  parallel: 1               # polish calls in flight at once; raise only together with OLLAMA_NUM_PARALLEL (see README)
 
 embedding:
   model: BAAI/bge-m3

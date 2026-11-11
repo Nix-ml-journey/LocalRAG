@@ -93,7 +93,7 @@ class Pipeline:
         p, n = [], checks.spoken_count(text)
         # gemma/qwen overshoot small budgets by 1.5-5x every time; the polish pass trims that, so a rewrite is
         # only worth a call when the draft is far too long or too short
-        if not 0.75 * b["words"] <= n <= 2.5 * b["words"]:
+        if not 0.75 * b["words"] <= n <= 1.5 * b["words"]:
             p.append(f"it was {n} words but must be about {b['words']}")
         if checks.repeated_rate(text, self.cfg["checks"]["repeated_ngram"]) > 0.08:
             p.append("it repeated its own paragraphs or refrains; mention each recurring detail at most once")
@@ -109,14 +109,33 @@ class Pipeline:
         return p
 
     def _write_section(self, prompt, b, earlier, grounded):
-        text = self.llm.chat(prompt)
+        # models write 3-5x a small word budget, so cap generation (about 1.4 tokens per word, 1.5x the budget)
+        # and cut the unfinished last sentence
+        cap = int(b["words"] * 1.8) + 40
+        text = self._clean(self._whole_sentences(self.llm.chat(prompt, max_tokens=cap)))
         problems = self._problems(text, b, earlier, grounded)
         if problems:  # one corrective retry
             log.info("retry '%s': %s", b["beat"], "; ".join(p[:60] for p in problems))
-            text = self.llm.chat(prompt + "\n\nPrevious attempt:\n" + text + "\n\nRewrite it; " + "; ".join(problems) + ".")
+            text = self._clean(self._whole_sentences(self.llm.chat(
+                prompt + "\n\nPrevious attempt:\n" + text + "\n\nRewrite it; " + "; ".join(problems) + ".",
+                max_tokens=cap)))
         return text
 
-    def _fit_length(self, parts, budgets, total, narrator, g, notes, max_calls=4):
+    @staticmethod
+    def _clean(text):
+        """Remove bracketed notes the model invented (e.g. "[recurring]"); only real cues and [S#] tags stay."""
+        return re.sub(r"[ 	]*\[(?!(?:PAUSE|SFX:|B-ROLL:|S\d+\]))[^\]]*\]", "", text, flags=re.I)
+
+    @staticmethod
+    def _whole_sentences(text):
+        """Drop a trailing half-sentence left by the token cap (kept as is when it would lose over half the text)."""
+        text = text.rstrip()
+        if re.search(r"[.!?…\"”’')\]}]$", text):
+            return text
+        m = re.search(r"^(.*[.!?…][\"”’')\]}]*)", text, re.S)  # greedy: up to the last sentence end
+        return m.group(1) if m and len(m.group(1)) > len(text) / 2 else text
+
+    def _fit_length(self, parts, budgets, total, narrator, g, notes, max_calls=7):
         """Final length control: while the script is more than 10% off target, rewrite the untried section furthest
         over (or under) its budget. A rewrite is kept only if it moves the total toward the target AND leaves the
         script free of repeats, so this step can never undo the anti-repetition pass."""
@@ -249,7 +268,9 @@ class Pipeline:
             script = re.sub(r"[ \t]*\[S\d+\]", "", script)
         if g.grounded and cited_text:
             # Verify step: ask the model about only the sentences the code flagged, with the lore as sole evidence
-            flagged = checks.uncited_facts(script) + [s for s, _ in checks.unsupported_cites(script, cited_text)]
+            # a [S1] tag proves nothing: the model also cites invented claims, so every cited sentence is checked too
+            flagged = (checks.uncited_facts(script) + [s for s, _ in checks.unsupported_cites(script, cited_text)]
+                       + [s for s in re.split(checks.SENT, script) if re.search(r"\[S\d+\]", s)])
 
             def supported(s):
                 sw = set(checks.words(s))  # the 12 chunks sharing most words with the sentence, so its source is in
@@ -258,7 +279,7 @@ class Pipeline:
                 return not ans.strip().upper().startswith("NO")  # an unclear answer leaves the sentence alone
 
             stage("Verifying…")
-            script, marked = checks.mark_invented(script, flagged, supported)
+            script, marked = checks.mark_invented(script, flagged, supported, limit=40)
             if marked:
                 notes.append(f"Verify step marked {marked} unsupported sentence(s) as INVENTED.")
 

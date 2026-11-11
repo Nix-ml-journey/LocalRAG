@@ -1,4 +1,5 @@
 """Model-free self-checks: python -m pytest tests"""
+import re
 import sys
 from pathlib import Path
 
@@ -127,3 +128,14 @@ def test_curly_apostrophe_is_one_word():
     # models emit both ' and ’; a split would inflate word counts and hide n-gram overlap with straight-quote sources
     assert checks.spoken_count("I don’t know") == checks.spoken_count("I don't know") == 3
     assert checks.words("don’t") == ["don't"]
+
+
+def test_sentence_split_ignores_initials_and_titles():
+    t = 'In 1884 Doyle published "J. Habakuk Jephson". Dr. Smith agreed. It ended.'
+    assert re.split(checks.SENT, t) == ['In 1884 Doyle published "J. Habakuk Jephson".', "Dr. Smith agreed.", "It ended."]
+
+
+def test_mark_invented_never_nests():
+    script = "{{INVENTED: I lean in. Records say so.}} Plain claim."
+    out, n = checks.mark_invented(script, ["{{INVENTED: I lean in.", "Records say so.}}", "Plain claim."], lambda s: False)
+    assert n == 1 and out.count("{{") == 2 and "{{INVENTED: Plain claim.}}" in out

@@ -24,12 +24,12 @@ flowchart LR
   and the unused budget of earlier beats, then polished on its own. A whole-script polish made the 12B model loop,
   so it is not used.
 - **Grounded history:** for fact-based genres the model tags facts `[S#]` (the lore chunk they came from) and wraps
-  anything it invents as `{{INVENTED: ...}}`. A Verify step re-checks the sentences the code flags against the lore.
+  anything it invents as `{{INVENTED: ...}}`. A Verify step re-checks every sentence that carries a `[S#]` tag, plus sentences naming something with no citation, against the lore (at most 40 checks).
 - **Guards:** repeated paragraphs and sentences are removed, the final length is steered to within 10% of the target,
   and passages with over 80% 5-gram overlap with a source are flagged.
 
 ## Results
-Measured on this machine (gemma3:12b, num_ctx 16384). These are single runs; quality metrics swing a few points.
+Measured on this machine (num_ctx 16384). Rows other than the fantasy row were measured on an earlier model, before the switch to gemma4:12b. These are single runs; quality metrics swing a few points.
 
 | Check | Result |
 |---|---|
@@ -38,11 +38,13 @@ Measured on this machine (gemma3:12b, num_ctx 16384). These are single runs; qua
 | Repeated 4-grams in those scripts | 4.2% / 0.7% / 4.4% |
 | Speed | about 4 min per 5-min script; generation is decode-bound at ~40 tokens/s |
 | Polish stage with `OLLAMA_NUM_PARALLEL=2` | 18.7 s down to 12.0 s, peak GPU 11.8 to 13.3 GB |
-| Offline tests (no GPU, no Ollama) | 38 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
+| Fantasy 5-min script, two runs on gemma4:12b (target 750) | 753 / 762 words, accuracy 99.6% / 98.4%, repeats 0.3% / 1.6%, sentences 14.8 / 14.9 words, 407-695 s each, peak VRAM 10.7 GB |
+| History 5-min script on gemma4:12b, after the Verify upgrade | 722 words (accuracy 96.3%), repeats 4.3%, sentences 14.4 words, 14 sentences marked `{{INVENTED}}`; an earlier history run on the same model gave 753 words, repeats 1.3% |
+| Offline tests (no GPU, no Ollama) | 41 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
 
-Unedited excerpt (history, "The Mary Celeste", `{{INVENTED}}` marks details the lore does not support):
-> The ship's bell felt strangely cold in my hand [S1]. I am cataloging artifacts from the *Mary Celeste* now [S1].
-> {{INVENTED: Records show Captain Briggs last touched it.}} Why would someone abandon a ship in perfect condition?
+Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks claims the lore does not support, `[S1]` marks facts that do):
+> On December 4, 1872, the *Dei Gratia* spotted her sailing erratically in the Atlantic [S1]. No one answered their signals, and a boarding party found the ship completely deserted [S1].
+> {{INVENTED: The captain's log ended abruptly, leaving a haunting void in the official record.}}
 
 ## Design decisions (what I tested and why)
 - **Cross-encoder reranker: off.** A MiniLM reranker gave no ranking gain and was 5x slower on CPU.
@@ -51,18 +53,24 @@ Unedited excerpt (history, "The Mary Celeste", `{{INVENTED}}` marks details the 
 - **Repeats are guarded by tests, not hope.** A fake-LLM test re-tells earlier scenes and fails if any repeat reaches
   the script. A second test proves the guard can fail (it breaks the dedupe on purpose).
 - **Length control accepts a rewrite only if it moves toward the target and adds no repeats.**
-- **Models:** gemma3:12b (writing) and BAAI/bge-m3 (embeddings). Models are not included; each has its own licence.
+- **Sentence length needs an example, not another rule.** Five prompts already asked for 10-15 words and the model wrote 7.9. A before/after example plus a reason and a self-check moved it to about 12-13.
+- **Cap section generation at about 1.8 tokens per word of budget.** The model wrote 3-5x small budgets, so retries and polish could not recover. The cap plus trimming the unfinished sentence brought scripts to 764-791 words.
+- **The rolling summary is labelled "already told".** It was labelled "Summary" and the model retold it; relabelling cut repeated phrases from 8.8% to 2.2% in one run.
+- **Invented bracket notes are stripped.** Only `[PAUSE]`, `[SFX:]`, `[B-ROLL:]` and `[S#]` survive.
+- **gemma4:12b is the writing model.** In a same-brief test against the model it replaced it had better accuracy, fewer repeats and lower peak VRAM (10.7 GB), and more concrete prose, but it is 2-3x slower (407-695 s per 5-min script). Sentences run long at 14.8-14.9 words.
+- **Models:** gemma4:12b (writing) and BAAI/bge-m3 (embeddings). Models are not included; each has its own licence.
 
 ## Limitations
 - Single user, single machine; no concurrency design beyond the polish step.
 - Retrieval is judged on 14 briefs; script quality on the 3-brief check plus reading, not a user study.
-- Average sentence length is about 7-8 words (target 10-15), so narration can sound choppy; read aloud before recording.
+- Average sentence length is now about 13-15 words (target 10-15); gemma4 runs at the long end. Read aloud before recording.
+- The Verify step is strict: it can mark a true paraphrase as `INVENTED`, and the model still reuses atmosphere lines (a repeated-phrase rate of 4.3% showed up in one history run). Word-level repetition is not checked yet.
 - History facts come from a small set of lore notes (6 topics). Fact-check every `{{INVENTED}}` mark and the
   Checks section before publishing.
 - The books and scripts used as style data are **not** in this repository (see below).
 
 ## Setup
-Needs Python 3.11 or 3.12 and Ollama (https://ollama.com).
+Needs Python 3.11 to 3.13 (tests also pass on 3.13) and Ollama (https://ollama.com).
 
 **Data is not included.** Put your own `.txt .md .docx .pdf .epub` files in `data/<genre>/` (for example
 `data/horror/`), name fact notes `lore_*.md`, then run `python cli.py ingest`. See "Adding your material" below.
@@ -70,7 +78,7 @@ Use only text you have the right to use.
 
 Windows PowerShell:
 ```powershell
-.\setup.ps1                  # venv, CPU torch, requirements, ollama pull gemma3:12b
+.\setup.ps1                  # venv, CPU torch, requirements, ollama pull gemma4:12b
 .\.venv\Scripts\Activate.ps1
 ```
 Linux: `bash setup.sh && source .venv/bin/activate`
@@ -115,7 +123,7 @@ Drop files (`.txt .md .docx .pdf .epub .srt .vtt`) in `data/<genre>/` (e.g. `hor
 - `config.yaml`: model, `num_ctx`, retrieval sizes, reranker on/off (`reranker.enabled`), words per minute, thresholds.
 - `prompts/<genre>.md` genre rules; `prompts/stages/*.md` stage templates (placeholders look like `<<name>>`).
 - `banned_phrases.txt`: one phrase per line; used in the prompts and checked after generation (one rewrite attempt, then listed in Checks).
-- Swap model: `ollama pull mistral-nemo` then set `llm.model: mistral-nemo` (or `gemma3:12b`). Models without thinking support are detected automatically.
+- Swap model: `ollama pull mistral-nemo` then set `llm.model: mistral-nemo`. Models without thinking support are detected automatically.
 
 ## History scripts and fact-checking
 Facts must come from retrieved lore chunks (`[S#]`). Anything the model invents is wrapped as `{{INVENTED: …}}` and listed under Checks → *Invented details*. This reduces but cannot eliminate invention: fact-check before publishing. The sample lore notes were written from memory, so verify them too.
@@ -127,7 +135,7 @@ After polishing, the code collects sentences that name something (a name, date o
 Passages with >80% 5-gram overlap with a retrieved source chunk are flagged; word-count accuracy; repeated-phrase rate; banned-phrase hits.
 
 ## Optional: parallel polish (small speed-up)
-The per-section polish calls are independent. To run 2 at once: set the Ollama server variable `OLLAMA_NUM_PARALLEL=2` (PowerShell: `[Environment]::SetEnvironmentVariable("OLLAMA_NUM_PARALLEL","2","User")`, then quit and restart Ollama) **and** set `llm.parallel: 2` in `config.yaml`. Measured with gemma3:12b: polish 18.7 s → 12.0 s, peak GPU 11.8 → 13.3 GB. 3 workers reached 14.8 GB, over the 14.5 GB budget. Undo with `SetEnvironmentVariable("OLLAMA_NUM_PARALLEL",$null,"User")`.
+The per-section polish calls are independent. To run 2 at once: set the Ollama server variable `OLLAMA_NUM_PARALLEL=2` (PowerShell: `[Environment]::SetEnvironmentVariable("OLLAMA_NUM_PARALLEL","2","User")`, then quit and restart Ollama) **and** set `llm.parallel: 2` in `config.yaml`. Measured on an earlier model: polish 18.7 s → 12.0 s, peak GPU 11.8 → 13.3 GB. 3 workers reached 14.8 GB, over the 14.5 GB budget. Undo with `SetEnvironmentVariable("OLLAMA_NUM_PARALLEL",$null,"User")`.
 
 ## VRAM troubleshooting
 Every stage logs VRAM/RAM (`nvidia-smi` + psutil) and warns above 14.5 GB. On an out-of-memory error the LLM wrapper halves `num_ctx` (down to `llm.min_ctx`) and retries, and retrieval shrinks with it.
