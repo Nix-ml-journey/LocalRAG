@@ -24,7 +24,7 @@ flowchart LR
   and the unused budget of earlier beats, then polished on its own. A whole-script polish made the 12B model loop,
   so it is not used.
 - **Grounded history:** for fact-based genres the model tags facts `[S#]` (the lore chunk they came from) and wraps
-  anything it invents as `{{INVENTED: ...}}`. A Verify step re-checks the sentences the code flags against the lore.
+  anything it invents as `{{INVENTED: ...}}`. A Verify step re-checks every sentence that carries a `[S#]` tag, plus sentences naming something with no citation, against the lore (at most 40 checks).
 - **Guards:** repeated paragraphs and sentences are removed, the final length is steered to within 10% of the target,
   and passages with over 80% 5-gram overlap with a source are flagged.
 
@@ -39,11 +39,12 @@ Measured on this machine (num_ctx 16384). Rows other than the fantasy row were m
 | Speed | about 4 min per 5-min script; generation is decode-bound at ~40 tokens/s |
 | Polish stage with `OLLAMA_NUM_PARALLEL=2` | 18.7 s down to 12.0 s, peak GPU 11.8 to 13.3 GB |
 | Fantasy 5-min script, two runs on gemma4:12b (target 750) | 753 / 762 words, accuracy 99.6% / 98.4%, repeats 0.3% / 1.6%, sentences 14.8 / 14.9 words, 407-695 s each, peak VRAM 10.7 GB |
-| Offline tests (no GPU, no Ollama) | 39 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
+| History 5-min script on gemma4:12b, after the Verify upgrade | 722 words (accuracy 96.3%), repeats 4.3%, sentences 14.4 words, 14 sentences marked `{{INVENTED}}`; an earlier history run on the same model gave 753 words, repeats 1.3% |
+| Offline tests (no GPU, no Ollama) | 41 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
 
-Unedited excerpt (history, "The Mary Celeste", `{{INVENTED}}` marks details the lore does not support):
-> The ship's bell felt strangely cold in my hand [S1]. I am cataloging artifacts from the *Mary Celeste* now [S1].
-> {{INVENTED: Records show Captain Briggs last touched it.}} Why would someone abandon a ship in perfect condition?
+Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks claims the lore does not support, `[S1]` marks facts that do):
+> On December 4, 1872, the *Dei Gratia* spotted her sailing erratically in the Atlantic [S1]. No one answered their signals, and a boarding party found the ship completely deserted [S1].
+> {{INVENTED: The captain's log ended abruptly, leaving a haunting void in the official record.}}
 
 ## Design decisions (what I tested and why)
 - **Cross-encoder reranker: off.** A MiniLM reranker gave no ranking gain and was 5x slower on CPU.
@@ -62,7 +63,8 @@ Unedited excerpt (history, "The Mary Celeste", `{{INVENTED}}` marks details the 
 ## Limitations
 - Single user, single machine; no concurrency design beyond the polish step.
 - Retrieval is judged on 14 briefs; script quality on the 3-brief check plus reading, not a user study.
-- Average sentence length is about 7-8 words (target 10-15), so narration can sound choppy; read aloud before recording.
+- Average sentence length is now about 13-15 words (target 10-15); gemma4 runs at the long end. Read aloud before recording.
+- The Verify step is strict: it can mark a true paraphrase as `INVENTED`, and the model still reuses atmosphere lines (a repeated-phrase rate of 4.3% showed up in one history run). Word-level repetition is not checked yet.
 - History facts come from a small set of lore notes (6 topics). Fact-check every `{{INVENTED}}` mark and the
   Checks section before publishing.
 - The books and scripts used as style data are **not** in this repository (see below).
