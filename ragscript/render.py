@@ -14,11 +14,9 @@ def render(brief, genre, minutes, narrator, pkg, script, chapters, sources, stat
          "## Title options", *[f"{i}. {t}" for i, t in enumerate(titles, 1)], "",
          "## Thumbnail text", *[f"- {t}" for t in pkg.get("thumbnails", [])], "",
          "## Narrator", str(narrator), "",
-         "## Script", "", script, "",
+         # the main script is the clean copy (no [S#] tags, no INVENTED braces): it reads and records as is
+         "## Script", "", clean, "",
          "## Chapters (estimated)", *[f"- {_ts(s)} {t}" for s, t in chapters], "",
-         "## Clean narration (for recording)", "",
-         # the annotated script above is for fact-checking; this copy has no [S#] tags and no INVENTED wrappers
-         clean if clean != script else "*The script above has no source tags or invented-detail markers, so it can be recorded as is.*", "",
          "## Description", pkg.get("description", ""), "",
          "## Tags", ", ".join(pkg.get("tags", [])), "",
          "## Sources used", *[f"- {src}" + (" (as " + ", ".join(f"S{n}" for n in ns) + ")" if ns else " (style)") for src, ns in sources.items()], "",
@@ -41,4 +39,6 @@ def render(brief, genre, minutes, narrator, pkg, script, chapters, sources, stat
         L += ["- **Names/dates/numbers with no [S#] citation and no INVENTED mark (check each):**"]
         L += [f"  - {s}" for s in stats["uncited_facts"]]
     L += [f"- Note: {n}" for n in stats["notes"]]
+    if clean != script:  # the version with every [S#] tag and {{INVENTED}} mark, for locating what the Checks list names
+        L += ["", "## Fact-check copy (annotated script)", "", script]
     return "\n".join(L) + "\n"

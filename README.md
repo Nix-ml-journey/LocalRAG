@@ -108,7 +108,7 @@ python -m eval.lore_check data/history/lore_*.md       # before ingesting lore: 
 pip install -r requirements-dev.txt && python -m pytest tests   # model-free self-checks
 ```
 Output goes to `output/<genre>-<min>min-<slug>.md`: titles (5), thumbnail text (3), narration with
-`[PAUSE]` / `[SFX: …]` / `[B-ROLL: …]`, estimated chapters, a **Clean narration** copy for recording (no `[S#]` tags, `{{INVENTED}}` unwrapped, cues kept; the `## Script` section keeps every marker for fact-checking), description, tags, sources, and a Checks section.
+`[PAUSE]` / `[SFX: …]` / `[B-ROLL: …]` (the `## Script` section is clean: no `[S#]` tags, no `{{INVENTED}}` braces, ready to record), estimated chapters, description, tags, sources, and a Checks section. Grounded genres end with a **Fact-check copy** of the script that keeps every `[S#]` tag and `{{INVENTED}}` mark, so you can find what the Checks list names.
 
 ## Any genre
 `--genre` (or the UI box) takes any name: "sci-fi", "true crime", "romance"… The name is lower-cased and hyphenated (`True Crime` → `true-crime`).

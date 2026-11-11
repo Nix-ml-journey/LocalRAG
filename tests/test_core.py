@@ -101,17 +101,17 @@ def test_clean_narration_strips_tags_and_markers_but_keeps_cues():
     assert checks.clean_narration(out) == out  # idempotent
 
 
-def test_render_has_annotated_script_and_clean_copy():
+def test_render_script_is_clean_and_annotated_copy_is_last():
     from ragscript import render
     stats = dict(words=10, target_words=10, word_accuracy=1.0, repeated_phrase_rate=0.0, avg_sentence_words=5.0,
                  overlap_flags=[], banned_hits=[], invented=["x"], unsupported_cites=[], uncited_facts=[], notes=[])
     md = render.render("b", "history", 5, "n", {}, "Fact one [S1]. {{INVENTED: a smell}}.", [(0, "c")], {}, stats)
-    annotated = md[md.index("## Script"): md.index("## Chapters")]
-    clean = md[md.index("## Clean narration"): md.index("## Description")]
-    assert "[S1]" in annotated and "{{INVENTED" in annotated  # fact-checking copy keeps every marker
-    assert "[S1]" not in clean and "INVENTED" not in clean and "Fact one. a smell." in clean
+    main = md[md.index("## Script"): md.index("## Chapters")]
+    annotated = md[md.index("## Fact-check copy"):]
+    assert "[S1]" not in main and "INVENTED" not in main and "Fact one. a smell." in main
+    assert "Fact one [S1]. {{INVENTED: a smell}}." in annotated  # every marker kept for fact-checking
     plain = render.render("b", "horror", 5, "n", {}, "Nothing to strip.", [(0, "c")], {}, stats)
-    assert "can be recorded as is" in plain[plain.index("## Clean narration"): plain.index("## Description")]
+    assert "Fact-check copy" not in plain  # nothing to annotate
 
 
 def test_overlap_flag_and_repeat_rate():
