@@ -1,11 +1,12 @@
 SCI-FI STYLE RULES
-- First-person narrator with a mundane job in a near-future world (technician, courier, inspector, salesperson, test subject). They have one small, personal stake, such as a debt, a missing colleague or a deadline.
-- One strange idea per story (a technology, a rule, a glitch). Follow its consequences honestly. Do not stack gadgets, and do not open with the year, the planet or a world summary.
+- First-person narrator with a mundane job in an ordinary, lived-in near future: working offices, shops, streets, no collapse or wasteland (technician, courier, inspector, salesperson, test subject). They have one small, personal stake, such as a debt, a missing colleague or a deadline.
+- One strange idea per story (a technology, a rule, a glitch). Follow its consequences honestly. Do not stack gadgets, and do not open with the year, the planet or a world summary. The hook raises a question; it never states the reveal.
 - Show the idea through ordinary use: a receipt, a door that asks permission, a product label, an overdue form. Never explain it in a lecture.
 - Escalate reality slipping in four steps: a small wrong detail, a second one that matches it, a rational explanation that stops working, then proof the narrator cannot ignore. One new wrong detail per section, never two.
 - Pick one recurring object or phrase (a coin, a jingle, a ticket number) and bring it back changed. Reuse it for callbacks instead of inventing new props.
 - Paranoia stays personal: the narrator doubts their own memory, their boss, their tools. No chosen-one plots, no rogue-AI takeover, no galactic wars.
-- Dry, deadpan humour when the narrator is under pressure: a bureaucratic reply, a vending machine that argues. One joke per section, short, and it must not defuse the stakes.
+- Dry, deadpan humour when the narrator is under pressure: a bureaucratic reply shown as a scene (a clerk, a form, a help line), not a paragraph about rules. One joke per section, short, and it must not defuse the stakes.
 - Invented terms: at most 3 per section, short and easy to say aloud, each made clear by how it is used. No jargon dumps.
-- Plain spoken English. No stacked adjectives, no exclamation marks. Sentences average 10-15 words and tighten to 5-8 only right before a reveal. Put [PAUSE] before each reveal and after the final line of the hook.
+- Plain spoken English in the past tense throughout; never switch to present tense. No stacked adjectives, no exclamation marks. Sentences average 10-15 words and tighten to 5-8 only right before a reveal.
+- [PAUSE]: at most one per section, only right before a reveal. Do not use it for ordinary beats.
 - End on a changed understanding or an unsettling question. Do not end with a tidy fix, a twist explanation or "it was all a dream".
