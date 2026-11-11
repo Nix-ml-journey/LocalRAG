@@ -125,21 +125,13 @@ Drop files (`.txt .md .docx .pdf .epub .srt .vtt`) in `data/<genre>/` (e.g. `hor
 - `banned_phrases.txt`: one phrase per line; used in the prompts and checked after generation (one rewrite attempt, then listed in Checks).
 - Swap model: `ollama pull mistral-nemo` then set `llm.model: mistral-nemo`. Models without thinking support are detected automatically.
 
-## History scripts and fact-checking
-Facts must come from retrieved lore chunks (`[S#]`). Anything the model invents is wrapped as `{{INVENTED: …}}` and listed under Checks → *Invented details*. This reduces but cannot eliminate invention: fact-check before publishing. The sample lore notes were written from memory, so verify them too.
+## Fact-checking and quality checks
+Grounded genres take facts only from retrieved lore (`[S#]`); anything invented is wrapped as `{{INVENTED: …}}` and listed under Checks. After polishing, the **Verify step** asks the model YES/NO ("does the lore state this?", lore as sole evidence) for every cited sentence and every sentence that names something without a citation (at most 40 checks); each NO becomes `{{INVENTED}}`. This reduces but cannot eliminate invention, and paraphrases can be mis-marked: fact-check before publishing. The sample lore notes were written from memory, so verify them too.
 
-## Verify step (fact-grounded genres only)
-After polishing, the code collects sentences that name something (a name, date or number) with no `[S#]` citation, or whose cited numbers/quotes are missing from the cited lore. The model then answers YES/NO for each one ("does the lore state this?", lore as sole evidence, at most 12 checks). Every NO is wrapped as `{{INVENTED: …}}` automatically, so it lands in the fact-check list. It only judges sentences the code flagged, so paraphrased claims can still slip through.
+Every output also reports word-count accuracy, repeated-phrase rate, banned-phrase hits, and passages with >80% 5-gram overlap with a source chunk.
 
-## Quality checks (in every output)
-Passages with >80% 5-gram overlap with a retrieved source chunk are flagged; word-count accuracy; repeated-phrase rate; banned-phrase hits.
-
-## Optional: parallel polish (small speed-up)
-The per-section polish calls are independent. To run 2 at once: set the Ollama server variable `OLLAMA_NUM_PARALLEL=2` (PowerShell: `[Environment]::SetEnvironmentVariable("OLLAMA_NUM_PARALLEL","2","User")`, then quit and restart Ollama) **and** set `llm.parallel: 2` in `config.yaml`. Measured on an earlier model: polish 18.7 s → 12.0 s, peak GPU 11.8 → 13.3 GB. 3 workers reached 14.8 GB, over the 14.5 GB budget. Undo with `SetEnvironmentVariable("OLLAMA_NUM_PARALLEL",$null,"User")`.
+## Optional: parallel polish
+To polish 2 sections at once, set the Ollama server variable `OLLAMA_NUM_PARALLEL=2` (PowerShell: `[Environment]::SetEnvironmentVariable("OLLAMA_NUM_PARALLEL","2","User")`, then restart Ollama) **and** `llm.parallel: 2` in `config.yaml`. Polish went 18.7 s → 12.0 s (peak GPU 11.8 → 13.3 GB); 3 workers hit 14.8 GB, over budget. Undo with `SetEnvironmentVariable("OLLAMA_NUM_PARALLEL",$null,"User")`.
 
 ## VRAM troubleshooting
-Every stage logs VRAM/RAM (`nvidia-smi` + psutil) and warns above 14.5 GB. On an out-of-memory error the LLM wrapper halves `num_ctx` (down to `llm.min_ctx`) and retries, and retrieval shrinks with it.
-If it still fails: lower `llm.num_ctx` (12288/8192), set `llm.keep_alive: 0` to unload between runs, close other GPU apps, or use a smaller model/quant. Embeddings and reranker are CPU-only and never use VRAM.
-
-## Limits
-A 14B model gives solid but not top-tier long-form prose; expect 10-25 min of generation for a 20-min script. Check the Checks section and read the script aloud before recording.
+Every stage logs VRAM/RAM and warns above 14.5 GB. On out-of-memory the LLM wrapper halves `num_ctx` (down to `llm.min_ctx`) and retries. If it still fails: lower `llm.num_ctx` (12288/8192), set `llm.keep_alive: 0`, close other GPU apps, or use a smaller model. Embeddings are CPU-only.
