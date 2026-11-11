@@ -160,3 +160,16 @@ def test_source_ledger_numbers_and_reports_sources():
     assert led.cite([c, c]).count("[S1]") == 2 and led.cited_text == {1: "fact"}
     led.add_style([{"id": "scripts:x.txt:3", "text": "style", "meta": {"source": "x.txt"}}])
     assert led.used() == {"lore_a.md": [1], "x.txt": []} and led.refs == ["fact", "fact", "style"]
+
+
+def test_splitter_keeps_mid_sentence_tags_and_abbreviations_whole():
+    t = "The ship left in 1861 [S1] before she was sold. He met Dr. Smith, i.e. the clerk. Done."
+    assert checks.sentences(t) == ["The ship left in 1861 [S1] before she was sold.", "He met Dr. Smith, i.e. the clerk.", "Done."]
+
+
+def test_multi_sentence_invented_mark_is_not_reported_as_uncited():
+    assert checks.uncited_facts("{{INVENTED: I lean in. Captain Briggs smiled.}} Captain Rose spoke.") == ["Captain Rose spoke."]
+
+
+def test_words_keep_accented_names_whole():
+    assert checks.words("Félix Bruzzone") == ["félix", "bruzzone"]

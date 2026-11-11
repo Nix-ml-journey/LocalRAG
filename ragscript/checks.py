@@ -5,8 +5,9 @@ from collections import Counter
 CUE = re.compile(r"\[[^\]]*\]")
 QUOTE = re.compile(r"[“\"]([^”\"]{6,})[”\"]")  # a quoted phrase of 6+ characters
 # sentence boundary; a [S#] tag after the full stop stays with its sentence, and the tag itself ends one
-# an initial ("J. Habakuk") or a title ("Dr. Smith") is not a sentence end
-SENT = r"(?<=[.!?…”\"\]])(?<!\b[A-Z]\.)(?<!\bMr\.)(?<!\bDr\.)(?<!\bSt\.)(?<!\bMrs\.)(?<!\bCapt\.)\s+(?!\[S\d)"
+# an initial ("J. Habakuk"), a title ("Dr. Smith") or a lower-case continuation ("1861 [S1] before", "i.e. the") is not a sentence end;
+# a closing }} of an {{INVENTED}} mark is
+SENT = r"(?<=[.!?…”\"\]}])(?<!\b[A-Z]\.)(?<!\bMr\.)(?<!\bDr\.)(?<!\bSt\.)(?<!\bMrs\.)(?<!\bCapt\.)\s+(?!\[S\d)(?![a-z])"
 
 
 def sentences(text: str):
@@ -15,7 +16,7 @@ def sentences(text: str):
 
 
 def words(t: str):
-    return re.findall(r"[a-z0-9']+", CUE.sub(" ", t).lower().replace("’", "'"))
+    return re.findall(r"[\w']+", CUE.sub(" ", t).lower().replace("’", "'"))  # \w: "Félix" is one word
 
 
 def spoken_count(t: str) -> int:
@@ -49,9 +50,11 @@ def reused_quotes(text, earlier):
 def uncited_facts(text):
     """Sentences in a fact-grounded script that name something (capitalised word after the first, or a digit)
     but carry neither a [S#] citation nor an {{INVENTED}} mark. A heuristic: proper nouns trigger it."""
-    out = []
+    out, pos = [], 0
+    marks = [m.span() for m in re.finditer(r"\{\{INVENTED:.*?\}\}", text, re.S)]
     for s in sentences(text):
-        if "[S" in s or "INVENTED" in s:
+        pos = text.find(s, pos)
+        if "[S" in s or "INVENTED" in s or any(a <= pos < b for a, b in marks):  # cited, or inside an INVENTED mark that spans sentences
             continue
         c = CUE.sub("", s).strip()
         body = c.split(None, 1)[1] if len(c.split()) > 1 else ""  # skip the sentence-initial capital
@@ -134,7 +137,7 @@ def unsupported_cites(text, chunks):
         # names inside {{INVENTED}} and cues are already labelled, so only the plain narration is checked; the first
         # word of the sentence is skipped because it is capitalised anyway
         plain = CUE.sub(" ", re.sub(r"\{\{INVENTED:.*?\}\}", " ", clean, flags=re.S))
-        names = [re.sub(r"['’]s$", "", w) for w in re.findall(r"[A-Za-z][A-Za-z'’-]*", plain)[1:]
+        names = [re.sub(r"['’]s$", "", w) for w in re.findall(r"[^\W\d_][\w'’-]*", plain)[1:]
                  if w[0].isupper() and len(w) > 2 and not w.isupper() and not re.match(r"I['’]", w)]  # not I'll, I've
         claims = re.findall(r"\b\d[\d,.]*\d\b|\b\d\b", clean) + QUOTE.findall(clean) + names
         miss = list(dict.fromkeys(c for c in claims if c.lower().strip(".,") not in src))
