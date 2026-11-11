@@ -6,7 +6,12 @@ CUE = re.compile(r"\[[^\]]*\]")
 QUOTE = re.compile(r"[“\"]([^”\"]{6,})[”\"]")  # a quoted phrase of 6+ characters
 # sentence boundary; a [S#] tag after the full stop stays with its sentence, and the tag itself ends one
 # an initial ("J. Habakuk") or a title ("Dr. Smith") is not a sentence end
-SENT = r"(?<=[.!?”\"\]])(?<!\b[A-Z]\.)(?<!\bMr\.)(?<!\bDr\.)(?<!\bSt\.)(?<!\bMrs\.)(?<!\bCapt\.)\s+(?!\[S\d)"
+SENT = r"(?<=[.!?…”\"\]])(?<!\b[A-Z]\.)(?<!\bMr\.)(?<!\bDr\.)(?<!\bSt\.)(?<!\bMrs\.)(?<!\bCapt\.)\s+(?!\[S\d)"
+
+
+def sentences(text: str):
+    """The one sentence splitter every check uses (initials and titles do not end a sentence)."""
+    return re.split(SENT, text)
 
 
 def words(t: str):
@@ -45,7 +50,7 @@ def uncited_facts(text):
     """Sentences in a fact-grounded script that name something (capitalised word after the first, or a digit)
     but carry neither a [S#] citation nor an {{INVENTED}} mark. A heuristic: proper nouns trigger it."""
     out = []
-    for s in re.split(SENT, text):
+    for s in sentences(text):
         if "[S" in s or "INVENTED" in s:
             continue
         c = CUE.sub("", s).strip()
@@ -75,7 +80,7 @@ def drop_repeat_sentences(text, earlier="", n=4, thr=0.7, min_words=6):
     out = []
     for para in re.split(r"\n\s*\n", text):
         keep = []
-        for s in re.split(SENT, para):
+        for s in sentences(para):
             w = words(s)
             sh = _grams(w, n)
             if len(w) >= min_words and sh and len(sh & seen) / len(sh) > thr:
@@ -96,8 +101,8 @@ def dedupe(text, earlier=""):
 def avg_sentence_words(text) -> float:
     """Average spoken words per sentence (cues and INVENTED markers ignored). Natural narration sits near 10-15;
     below ~7 it sounds like a string of fragments, above ~20 it reads like a book."""
-    sentences = [s for s in re.split(r"(?<=[.!?…])\s+", re.sub(r"\{\{INVENTED:|\}\}", " ", CUE.sub(" ", text))) if words(s)]
-    return sum(len(words(s)) for s in sentences) / len(sentences) if sentences else 0.0
+    sents = [s for s in sentences(re.sub(r"\{\{INVENTED:|\}\}", " ", CUE.sub(" ", text))) if words(s)]
+    return sum(len(words(s)) for s in sents) / len(sents) if sents else 0.0
 
 
 def repeated_rate(text, n) -> float:
@@ -120,7 +125,7 @@ def unsupported_cites(text, chunks):
     from every cited lore chunk. chunks: {n: chunk text}. Cheap and strict; it cannot judge paraphrased claims, and
     a capitalised word that is not a name only costs one extra Verify call."""
     bad = []
-    for s in re.split(SENT, text):
+    for s in sentences(text):
         cited = [int(n) for n in re.findall(r"\[S(\d+)\]", s)]
         if not cited:
             continue

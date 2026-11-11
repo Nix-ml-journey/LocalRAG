@@ -139,3 +139,24 @@ def test_mark_invented_never_nests():
     script = "{{INVENTED: I lean in. Records say so.}} Plain claim."
     out, n = checks.mark_invented(script, ["{{INVENTED: I lean in.", "Records say so.}}", "Plain claim."], lambda s: False)
     assert n == 1 and out.count("{{") == 2 and "{{INVENTED: Plain claim.}}" in out
+
+
+def test_avg_sentence_words_uses_the_shared_splitter():
+    assert checks.avg_sentence_words('He read J. Habakuk Jephson aloud. It ended.') == (6 + 2) / 2
+
+
+def test_verify_marks_only_what_the_model_rejects():
+    from ragscript import verify
+    lore = {1: "The Mary Celeste sailed in 1872 with 1701 barrels."}
+    script = "She sailed in 1872 [S1]. The log ended mid-sentence [S1]."
+    out, n = verify.verify(script, lore, lambda l, s: "NO" if "mid-sentence" in s else "YES")
+    assert n == 1 and "{{INVENTED: The log ended mid-sentence.}}" in out and "{{INVENTED: She" not in out
+
+
+def test_source_ledger_numbers_and_reports_sources():
+    from ragscript.sources import SourceLedger
+    led = SourceLedger()
+    c = {"id": "lore:lore_a.md:0", "text": "fact", "meta": {"source": "lore_a.md"}}
+    assert led.cite([c, c]).count("[S1]") == 2 and led.cited_text == {1: "fact"}
+    led.add_style([{"id": "scripts:x.txt:3", "text": "style", "meta": {"source": "x.txt"}}])
+    assert led.used() == {"lore_a.md": [1], "x.txt": []} and led.refs == ["fact", "fact", "style"]

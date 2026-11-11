@@ -8,9 +8,11 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from main import create_app
+from ragscript.store import Store
 
 
 class FakeStore:
+    dense = Store.dense  # the real query code runs against the fake embedder
     def __init__(self, path):
         self.client = chromadb.PersistentClient(path=str(path))
         self.cols = {"lore": self.client.get_or_create_collection("lore", metadata={"hnsw:space": "cosine"})}

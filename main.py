@@ -34,14 +34,11 @@ def create_app(store) -> FastAPI:
     @app.post("/vector_store/query")
     def query(req: Query):
         # shortcut: dense search only, no genre filter or BM25; upgrade if lore gets large or multi-genre
-        emb = store.embed([req.query])
         rows = []
         for col in (store.cols["lore"], episodes):  # n from each, so history can't crowd out lore or reverse
-            if col.count() == 0:
-                continue
-            r = col.query(query_embeddings=emb, n_results=min(req.n_results, col.count()), where=req.where)
-            for i, d, m, x in zip(r["ids"][0], r["documents"][0], r["metadatas"][0], r["distances"][0]):
-                rows.append({"id": i, "document": d, "metadata": {"Title": m.get("source", ""), **m}, "distance": x})
+            for d in store.dense(col, req.query, req.n_results, req.where):
+                rows.append({"id": d["id"], "document": d["text"], "metadata": {"Title": d["meta"].get("source", ""), **d["meta"]},
+                             "distance": d["distance"]})
         rows.sort(key=lambda row: row["distance"])
         return {"success": True, "results": rows}
 

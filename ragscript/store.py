@@ -39,6 +39,15 @@ class Store:
     def embed(self, texts):
         return embedder(self.cfg).encode(texts, normalize_embeddings=True, batch_size=8).tolist()
 
+    def dense(self, col, query, n, where=None):
+        """Nearest chunks of one Chroma collection: [{id, text, meta, distance}]. The one place a query is embedded
+        and run, shared by the retriever and the HTTP service."""
+        if col.count() == 0:
+            return []
+        r = col.query(query_embeddings=self.embed([query]), n_results=min(n, col.count()), where=where)
+        return [{"id": i, "text": d, "meta": m, "distance": x}
+                for i, d, m, x in zip(r["ids"][0], r["documents"][0], r["metadatas"][0], r["distances"][0])]
+
     def bm25(self, name):
         """(bm25, ids, docs, metas) built lazily from Chroma, cleared after ingest."""
         if name not in self._bm25:
@@ -62,47 +71,56 @@ class Store:
 
     def ingest(self, llm_tag_fn):
         """Incrementally (re)index data_dir. llm_tag_fn(text)->JSON str for untagged files."""
-        data = config.path(self.cfg, "data_dir")
         sf = config.path(self.cfg, "state_file")
         state = json.loads(sf.read_text()) if sf.exists() else {}
         state.setdefault("files", {})
         state.setdefault("tags", {})
         seen = set()
-        for f in sorted(data.rglob("*")):
-            if not f.is_file() or f.suffix.lower() not in loaders.SUPPORTED:
-                continue
-            rel = f.relative_to(data).as_posix()
-            h = hashlib.sha256(f.read_bytes()).hexdigest()
-            seen.add(rel)
+        for f, rel, h in self._files(config.path(self.cfg, "data_dir"), seen):
             if state["files"].get(rel) == h:
                 continue
             log.info("ingesting %s", rel)
             self._remove(rel)
-            tagged = True
-            if rel.startswith("hooks/"):
-                self._ingest_hooks(rel, loaders.clean(loaders.read_raw(f)))
-            else:
-                fm, text = loaders.load(f)
-                meta, tagged = metadata.file_meta(rel, fm, text, h, state, llm_tag_fn)
-                items = chunking.chunk(text, self.cfg)
-                kind = metadata.kind_of(rel, fm)
-                self._add(kind, rel, items, meta)
-                if kind == "scripts" and items:
-                    # auto-fill the hooks library from each script's opening and closing beats
-                    self._add("hooks", rel, [("hook", items[0][1]), ("ending", items[-1][1])], meta)
-            if tagged:  # an untagged file stays "changed" so the next ingest retries the tagger
+            if self._index_file(f, rel, h, state, llm_tag_fn):  # an untagged file stays "changed": next ingest retries
                 state["files"][rel] = h
-        # also files indexed but never recorded (tagger was down), so a deleted one cannot leave chunks behind
-        indexed = {m["source"] for c in self.cols.values() for m in c.get(include=["metadatas"])["metadatas"]}
-        for rel in (set(state["files"]) | indexed) - seen:
-            log.info("removing deleted %s", rel)
-            self._remove(rel)
-            state["files"].pop(rel, None)
+        self._prune(seen, state)
         sf.parent.mkdir(parents=True, exist_ok=True)
         sf.write_text(json.dumps(state, indent=1))
         self._bm25.clear()
         vram.log_stage("ingest done")
         return {n: c.count() for n, c in self.cols.items()}
+
+    @staticmethod
+    def _files(data, seen):
+        """(path, relative name, content hash) of every supported file; their names are added to `seen`."""
+        for f in sorted(data.rglob("*")):
+            if f.is_file() and f.suffix.lower() in loaders.SUPPORTED:
+                rel = f.relative_to(data).as_posix()
+                seen.add(rel)
+                yield f, rel, hashlib.sha256(f.read_bytes()).hexdigest()
+
+    def _index_file(self, f, rel, h, state, llm_tag_fn) -> bool:
+        """Chunk and add one file to its collection. False when the LLM tagger failed for it."""
+        if rel.startswith("hooks/"):
+            self._ingest_hooks(rel, loaders.clean(loaders.read_raw(f)))
+            return True
+        fm, text = loaders.load(f)
+        meta, tagged = metadata.file_meta(rel, fm, text, h, state, llm_tag_fn)
+        items = chunking.chunk(text, self.cfg)
+        kind = metadata.kind_of(rel, fm)
+        self._add(kind, rel, items, meta)
+        if kind == "scripts" and items:
+            # auto-fill the hooks library from each script's opening and closing beats
+            self._add("hooks", rel, [("hook", items[0][1]), ("ending", items[-1][1])], meta)
+        return tagged
+
+    def _prune(self, seen, state):
+        """Remove deleted files from the index; also files indexed but never recorded (tagger was down)."""
+        indexed = {m["source"] for c in self.cols.values() for m in c.get(include=["metadatas"])["metadatas"]}
+        for rel in (set(state["files"]) | indexed) - seen:
+            log.info("removing deleted %s", rel)
+            self._remove(rel)
+            state["files"].pop(rel, None)
 
     def _ingest_hooks(self, rel, text):
         """Hand-written library: blocks separated by '---', first line 'TYPE: hook|ending'."""

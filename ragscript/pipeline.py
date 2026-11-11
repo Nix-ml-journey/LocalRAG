@@ -4,10 +4,11 @@ import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
 
-from . import checks, chunking, config, render, vram
+from . import checks, chunking, config, render, vram, verify
 from . import genre as genre_pack
 from .llm import LLM
 from .retrieve import Retriever
+from .sources import SourceLedger
 from .store import Store
 
 log = logging.getLogger("ragscript")
@@ -91,13 +92,14 @@ class Pipeline:
     def _problems(self, text, b, earlier, grounded):
         """Reasons a section draft must be regenerated (empty list = accept)."""
         p, n = [], checks.spoken_count(text)
-        # gemma/qwen overshoot small budgets by 1.5-5x every time; the polish pass trims that, so a rewrite is
+        # models overshoot small budgets by 1.5-5x every time; the polish pass trims that, so a rewrite is
         # only worth a call when the draft is far too long or too short
-        if not 0.75 * b["words"] <= n <= 1.5 * b["words"]:
+        ln = self.cfg["length"]
+        if not ln["draft_min"] * b["words"] <= n <= ln["draft_max"] * b["words"]:
             p.append(f"it was {n} words but must be about {b['words']}")
-        if checks.repeated_rate(text, self.cfg["checks"]["repeated_ngram"]) > 0.08:
+        if checks.repeated_rate(text, self.cfg["checks"]["repeated_ngram"]) > self.cfg["checks"]["section_repeat"]:
             p.append("it repeated its own paragraphs or refrains; mention each recurring detail at most once")
-        if earlier and checks.overlap_flags(text, [earlier], 4, 0.6):
+        if earlier and checks.overlap_flags(text, [earlier], 4, self.cfg["checks"]["earlier_overlap"]):
             p.append("it repeated earlier paragraphs; write only NEW events that move the story forward")
         if checks.reused_quotes(text, earlier):
             p.append("it repeated a quotation already used earlier; quote each source only once")
@@ -109,9 +111,8 @@ class Pipeline:
         return p
 
     def _write_section(self, prompt, b, earlier, grounded):
-        # models write 3-5x a small word budget, so cap generation (about 1.4 tokens per word, 1.5x the budget)
-        # and cut the unfinished last sentence
-        cap = int(b["words"] * 1.8) + 40
+        # models write 3-5x a small word budget, so cap generation and cut the unfinished last sentence
+        cap = int(b["words"] * self.cfg["length"]["token_cap"]) + 40
         text = self._clean(self._whole_sentences(self.llm.chat(prompt, max_tokens=cap)))
         problems = self._problems(text, b, earlier, grounded)
         if problems:  # one corrective retry
@@ -136,14 +137,14 @@ class Pipeline:
         return m.group(1) if m and len(m.group(1)) > len(text) / 2 else text
 
     def _fit_length(self, parts, budgets, total, narrator, g, notes, max_calls=7):
-        """Final length control: while the script is more than 10% off target, rewrite the untried section furthest
+        """Final length control: while the script is more than fit_tolerance off target, rewrite the untried section furthest
         over (or under) its budget. A rewrite is kept only if it moves the total toward the target AND leaves the
         script free of repeats, so this step can never undo the anti-repetition pass."""
         words = [checks.spoken_count(p) for p in parts]
-        tried = set()
+        tol, tried = self.cfg["length"]["fit_tolerance"], set()
         for _ in range(max_calls):
             n = sum(words)
-            if 0.9 * total <= n <= 1.1 * total:
+            if (1 - tol) * total <= n <= (1 + tol) * total:
                 break
             sign = 1 if n > total else -1
             i = max((j for j in range(len(parts)) if j not in tried), default=None,
@@ -174,17 +175,8 @@ class Pipeline:
             progress(msg)
             vram.log_stage(msg)
 
-        sources, refs, cited_text = {}, [], {}  # chunk id -> S number ; texts for overlap check ; S number -> text
-        style_used = set()
-
-        def cite(chunks):
-            lines = []
-            for c in chunks:
-                n = sources.setdefault(c["id"], len(sources) + 1)
-                refs.append(c["text"])
-                cited_text[n] = c["text"]
-                lines.append(f"[S{n}] ({c['meta'].get('source')}) {c['text']}")
-            return "\n\n".join(lines)
+        ledger = SourceLedger()
+        cite = ledger.cite
 
         notes = []
         lore0 = self.ret.search("lore", brief, genre, k=self._k())
@@ -212,9 +204,7 @@ class Pipeline:
             beat_txt = f"{b['beat']}: {b.get('title','')} - {b.get('summary','')}"
             if b["beat"] == "hook":
                 beat_txt += f"\nOpen with this chosen hook, polished and extended:\n{hook}"
-            for c in style:  # style examples are sources too (listed in output, not cited in prose)
-                style_used.add(c["meta"]["source"])
-                refs.append(c["text"])  # so the >80% overlap check also covers style examples
+            ledger.add_style(style)  # so the >80% overlap check also covers style examples
             tail = ""
             if sections:
                 tail = ("\n\nEnd of the text written so far. Do NOT repeat its sentences, refrains or images; "
@@ -234,7 +224,7 @@ class Pipeline:
                                         temperature=0.2, max_tokens=300)
 
         stage("Polishing…")
-        # per section: a whole-script polish call made the 14B model loop and repeat paragraphs
+        # per section: a whole-script polish call made the model loop and repeat paragraphs
         rn = self.cfg["checks"]["repeated_ngram"]
         def polish(bt):
             b, t = bt
@@ -243,7 +233,8 @@ class Pipeline:
                 "polish", text=t, narrator=narrator, genre_rules=g.rules,
                 banned="\n".join(self.banned), target_words=ref),
                 temperature=0.5, max_tokens=int(checks.spoken_count(t) * 2.2))
-            ok = (0.7 * ref <= checks.spoken_count(p) <= 1.35 * ref
+            ln = self.cfg["length"]
+            ok = (ln["polish_min"] * ref <= checks.spoken_count(p) <= ln["polish_max"] * ref
                   and checks.repeated_rate(p, rn) <= checks.repeated_rate(t, rn) + 0.05)
             return (p if ok else t), ok
 
@@ -266,20 +257,10 @@ class Pipeline:
         script = checks.dedupe("\n\n".join(parts))  # final safety net: nothing repeated may reach the output
         if not g.grounded:  # [S#] tags only help fact-checking; ungrounded stories get them leaked by the model
             script = re.sub(r"[ \t]*\[S\d+\]", "", script)
-        if g.grounded and cited_text:
-            # Verify step: ask the model about only the sentences the code flagged, with the lore as sole evidence
-            # a [S1] tag proves nothing: the model also cites invented claims, so every cited sentence is checked too
-            flagged = (checks.uncited_facts(script) + [s for s, _ in checks.unsupported_cites(script, cited_text)]
-                       + [s for s in re.split(checks.SENT, script) if re.search(r"\[S\d+\]", s)])
-
-            def supported(s):
-                sw = set(checks.words(s))  # the 12 chunks sharing most words with the sentence, so its source is in
-                near = sorted(cited_text.values(), key=lambda t: -len(sw & set(checks.words(t))))[:12]
-                ans = self.llm.chat(self._tpl("verify", lore="\n\n".join(near), sentence=s), temperature=0.0, max_tokens=5)
-                return not ans.strip().upper().startswith("NO")  # an unclear answer leaves the sentence alone
-
+        if g.grounded and ledger.cited_text:
             stage("Verifying…")
-            script, marked = checks.mark_invented(script, flagged, supported, limit=40)
+            script, marked = verify.verify(script, ledger.cited_text, lambda lore, sent: self.llm.chat(
+                self._tpl("verify", lore=lore, sentence=sent), temperature=0.0, max_tokens=5))
             if marked:
                 notes.append(f"Verify step marked {marked} unsupported sentence(s) as INVENTED.")
 
@@ -293,11 +274,11 @@ class Pipeline:
             "word_accuracy": round(1 - abs(words_total - total) / total, 3),
             "repeated_phrase_rate": round(checks.repeated_rate(script, rn), 4),
             "avg_sentence_words": round(checks.avg_sentence_words(script), 1),
-            "overlap_flags": checks.overlap_flags(script, refs, self.cfg["checks"]["ngram"],
+            "overlap_flags": checks.overlap_flags(script, ledger.refs, self.cfg["checks"]["ngram"],
                                                   self.cfg["checks"]["overlap_threshold"]),
             "banned_hits": checks.banned_hits(script, self.banned),
             "invented": checks.invented(script), "notes": notes,
-            "unsupported_cites": checks.unsupported_cites(script, cited_text) if g.grounded else [],
+            "unsupported_cites": checks.unsupported_cites(script, ledger.cited_text) if g.grounded else [],
             "uncited_facts": checks.uncited_facts(script) if g.grounded else [],
         }
         # chapter times: each beat's share of the polished length, at wpm
@@ -307,12 +288,7 @@ class Pipeline:
         for (b, _), w in zip(sections, weights):
             chapters.append((int(acc * scale / wpm * 60), b.get("title") or b["beat"]))
             acc += w
-        sources_used = {}
-        for cid, n in sources.items():
-            sources_used.setdefault(cid.split(":", 2)[1], []).append(n)  # id = "<collection>:<file>:<chunk no.>"
-        for s in sorted(style_used):
-            sources_used.setdefault(s, [])
-        md = render.render(brief, genre, minutes, narrator, pkg, script, chapters, sources_used, stats)
+        md = render.render(brief, genre, minutes, narrator, pkg, script, chapters, ledger.used(), stats)
         out = config.path(self.cfg, "output_dir")
         out.mkdir(exist_ok=True)
         slug = re.sub(r"[^a-z0-9]+", "-", brief.lower())[:50].strip("-") or "script"

@@ -19,11 +19,8 @@ class Retriever:
         def ok(m):
             return m.get("genre") in (genre, "any") and (not beat or m.get("beat") == beat)
 
-        dense = col.query(query_embeddings=self.store.embed([query]), n_results=min(r["candidates"], col.count()),
-                          where=where)
-        docs = {}
-        for i, d, m in zip(dense["ids"][0], dense["documents"][0], dense["metadatas"][0]):
-            docs[i] = {"id": i, "text": d, "meta": m}
+        docs = {d["id"]: {"id": d["id"], "text": d["text"], "meta": d["meta"]}
+                for d in self.store.dense(col, query, r["candidates"], where)}
         ranks = [list(docs)]
 
         bm, ids, texts, metas = self.store.bm25(coll)

@@ -13,8 +13,8 @@ llm:
   num_ctx: 16384
   min_ctx: 4096             # OOM retry halves num_ctx down to this
   temperature: 0.8
-  repeat_penalty: 1.1       # curbs the looping 14B models fall into on long prose
-  think_outline: true       # qwen3 thinking only for the outline stage; off elsewhere
+  repeat_penalty: 1.1       # curbs the looping small models fall into on long prose
+  think_outline: true       # thinking only for the outline stage; off elsewhere
   keep_alive: 10m
   parallel: 1               # polish calls in flight at once; raise only together with OLLAMA_NUM_PARALLEL (see README)
 
@@ -44,3 +44,13 @@ checks:
   ngram: 5
   overlap_threshold: 0.8    # flag passages whose 5-grams are >80% present in a source chunk
   repeated_ngram: 4         # repeated-phrase rate uses this n
+  section_repeat: 0.08      # a section draft is rewritten when more than this share of its 4-grams repeat
+  earlier_overlap: 0.6      # ... or when more than this share of a paragraph's 4-grams were already written
+
+length:                     # tuned against the README results; change one at a time and re-measure
+  draft_min: 0.75           # a section draft is accepted between draft_min and draft_max x its word budget
+  draft_max: 1.5
+  token_cap: 1.8            # generation cap: tokens per budgeted word (models write 3-5x small budgets)
+  polish_min: 0.7           # a polished section is accepted between polish_min and polish_max x its target
+  polish_max: 1.35
+  fit_tolerance: 0.1        # the whole script is rewritten until within +/- this share of the target
