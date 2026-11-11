@@ -2,6 +2,8 @@
 import html
 import posixpath
 import re
+import shutil
+import subprocess
 import unicodedata
 import zipfile
 from pathlib import Path
@@ -36,17 +38,34 @@ def _epub(p: Path) -> str:
     return re.sub(r"(?m)^[ \t]+|[ \t]+$", "", "\n\n".join(out))  # xhtml indentation becomes stray spaces
 
 
+def _unhyphenate(text: str) -> str:
+    """Join words hyphenated across a line break ("ani-\nmals"), but keep real compounds ("mother-in-\nlaw"): a
+    word that already has a hyphen before the break keeps it."""
+    return re.sub(r"(?<![\w-])(\w+)-\n(\w)", r"\1\2", text)
+
+
+def _pdf(p: Path) -> str:
+    """PDF text. pdftotext (poppler) when installed: pypdf turns a soft hyphen into a space, which splits words into
+    syllables in books typeset that way; pdftotext keeps U+00AD so it can be deleted."""
+    if exe := shutil.which("pdftotext"):
+        try:
+            out = subprocess.run([exe, "-enc", "UTF-8", str(p), "-"], capture_output=True, check=True, timeout=300)
+            return re.sub("­ ?", "", out.stdout.decode("utf-8", "replace"))  # soft hyphen and the gap after it
+        except (subprocess.SubprocessError, OSError):
+            pass  # fall back to pypdf
+    from pypdf import PdfReader
+    return "\n\n".join(pg.extract_text() or "" for pg in PdfReader(str(p)).pages)
+
+
 def read_raw(p: Path) -> str:
     s = p.suffix.lower()
     if s == ".docx":
         import docx
         return "\n\n".join(para.text for para in docx.Document(str(p)).paragraphs)
     if s == ".pdf":
-        from pypdf import PdfReader
-        text = "\n\n".join(pg.extract_text() or "" for pg in PdfReader(str(p)).pages)
-        text = unicodedata.normalize("NFKC", text)  # ligature glyphs (ﬀ ﬃ) back to plain letters
+        text = unicodedata.normalize("NFKC", _pdf(p))  # ligature glyphs (ﬀ ﬃ) back to plain letters
         text = re.sub(r"(?m)^\s*\d{1,4}\s*$", "", text)  # bare page numbers
-        return re.sub(r"(\w)-\n(\w)", r"\1\2", text)  # words hyphenated across a line break
+        return _unhyphenate(text)
     if s == ".epub":
         return _epub(p)
     return p.read_text(encoding="utf-8", errors="replace")

@@ -39,3 +39,22 @@ def test_plain_text_is_untouched(tmp_path):
     f = tmp_path / "b.txt"
     f.write_text("Just a story.", encoding="utf-8")
     assert loaders.load(f)[1] == "Just a story."
+
+
+def test_unhyphenate_joins_split_words_but_keeps_compounds():
+    from ragscript.loaders import _unhyphenate
+    assert _unhyphenate("the ani-\nmals and his mother-in-\nlaw") == "the animals and his mother-in-\nlaw"
+
+
+def test_splitter_does_not_end_a_sentence_at_a_closing_quote_before_a_lowercase_word():
+    from ragscript import checks
+    assert len(checks.sentences('He read "J. Habakuk Jephson" aloud. It ended.')) == 2
+
+
+def test_pdf_soft_hyphens_are_removed_with_their_gap(tmp_path, monkeypatch):
+    import subprocess
+    from ragscript import loaders
+    fake = subprocess.CompletedProcess([], 0, stdout="the drawe­ rs and dif­ficulty".encode("utf-8"))
+    monkeypatch.setattr(loaders.shutil, "which", lambda n: "pdftotext")
+    monkeypatch.setattr(loaders.subprocess, "run", lambda *a, **k: fake)
+    assert loaders._pdf(tmp_path / "x.pdf") == "the drawers and difficulty"

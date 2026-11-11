@@ -40,7 +40,7 @@ Measured on this machine (num_ctx 16384). Rows other than the fantasy row were m
 | Polish stage with `OLLAMA_NUM_PARALLEL=2` | 18.7 s down to 12.0 s, peak GPU 11.8 to 13.3 GB |
 | Fantasy 5-min script, two runs on gemma4:12b (target 750) | 753 / 762 words, accuracy 99.6% / 98.4%, repeats 0.3% / 1.6%, sentences 14.8 / 14.9 words, 407-695 s each, peak VRAM 10.7 GB |
 | History 5-min script on gemma4:12b, after the Verify upgrade | 722 words (accuracy 96.3%), repeats 4.3%, sentences 14.4 words, 14 sentences marked `{{INVENTED}}`; an earlier history run on the same model gave 753 words, repeats 1.3% |
-| Offline tests (no GPU, no Ollama) | 47 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
+| Offline tests (no GPU, no Ollama) | 50 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
 
 Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks claims the lore does not support, `[S1]` marks facts that do):
 > On December 4, 1872, the *Dei Gratia* spotted her sailing erratically in the Atlantic [S1]. No one answered their signals, and a boarding party found the ship completely deserted [S1].
@@ -112,7 +112,7 @@ Output goes to `output/<genre>-<min>min-<slug>.md`: titles (5), thumbnail text (
 
 ## Adding your material
 Drop files (`.txt .md .docx .pdf .epub .srt .vtt`) in `data/<genre>/` (e.g. `horror`, `history`, `fantasy`, `cthulhu`, or your own), then run `ingest`.
-- Books: EPUB chapters are read in reading order; Project Gutenberg licence headers/footers, PDF page numbers and line-break hyphens are removed automatically. Scanned PDFs (images) have no text and need OCR first.
+- Books: EPUB chapters are read in reading order; Project Gutenberg licence headers/footers, PDF page numbers and line-break hyphens are removed automatically (real compounds like mother-in-law are kept; if poppler's `pdftotext` is on PATH it is used, which also repairs books typeset with soft hyphens). Scanned PDFs (images) have no text and need OCR first.
 - **Past scripts** → style collection. Optional YAML front-matter: `subgenre, tone, pov, views, retention`. Missing tags are filled once by the LLM (cached by file hash).
 - **Lore/facts** → name the file `lore_*.md` (or front-matter `kind: lore`).
 - **Hooks/endings** → `data/hooks/*.md`: blocks separated by a `---` line, first line `TYPE: hook` or `TYPE: ending`. Each script's first and last beat are also added automatically.
