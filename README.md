@@ -143,3 +143,6 @@ To polish 2 sections at once, set the Ollama server variable `OLLAMA_NUM_PARALLE
 
 ## VRAM troubleshooting
 Every stage logs VRAM/RAM and warns above 14.5 GB. On out-of-memory the LLM wrapper halves `num_ctx` (down to `llm.min_ctx`) and retries. If it still fails: lower `llm.num_ctx` (12288/8192), set `llm.keep_alive: 0`, close other GPU apps, or use a smaller model. Embeddings are CPU-only.
+
+## Built with AI assistance
+This project was developed with the help of AI tools: Claude (Claude Code, with plugins for prompt engineering, refactoring and code review) and Cursor. I chose what to build, picked the data, ran the tests and generation runs on my own GPU, and decided what to keep.
