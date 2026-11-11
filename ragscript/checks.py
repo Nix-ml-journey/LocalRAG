@@ -163,6 +163,7 @@ def clean_narration(script) -> str:
     """The script as it should be recorded: [S#] source tags removed, {{INVENTED: x}} unwrapped to x, cues kept."""
     text = re.sub(r"[ \t]*\[S\d+\]", "", script)
     text = re.sub(r"\{\{INVENTED:\s*(.*?)\}\}", r"\1", text, flags=re.S)
+    text = text.replace("{{", "").replace("}}", "")  # never leave stray braces in the recording copy
     return re.sub(r"[ \t]+([.,;:!?])", r"\1", re.sub(r"[ \t]{2,}", " ", text))
 
 

@@ -124,7 +124,9 @@ class Pipeline:
 
     @staticmethod
     def _clean(text):
-        """Remove bracketed notes the model invented (e.g. "[recurring]"); only real cues and [S#] tags stay."""
+        """Remove bracketed notes the model invented (e.g. "[recurring]"); only real cues and [S#] tags stay.
+        A {{...}} the model wrote without the INVENTED: label is the mark it meant, so it gets the label."""
+        text = re.sub(r"\{\{\s*(?!invented\s*:)(.*?)\}\}", r"{{INVENTED: \1}}", text, flags=re.S | re.I)
         return re.sub(r"[ 	]*\[(?!(?:PAUSE|SFX:|B-ROLL:|S\d+\]))[^\]]*\]", "", text, flags=re.I)
 
     @staticmethod

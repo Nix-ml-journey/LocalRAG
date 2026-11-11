@@ -40,7 +40,7 @@ Measured on this machine (num_ctx 16384). Rows other than the fantasy row were m
 | Polish stage with `OLLAMA_NUM_PARALLEL=2` | 18.7 s down to 12.0 s, peak GPU 11.8 to 13.3 GB |
 | Fantasy 5-min script, two runs on gemma4:12b (target 750) | 753 / 762 words, accuracy 99.6% / 98.4%, repeats 0.3% / 1.6%, sentences 14.8 / 14.9 words, 407-695 s each, peak VRAM 10.7 GB |
 | History 5-min script on gemma4:12b, after the Verify upgrade | 722 words (accuracy 96.3%), repeats 4.3%, sentences 14.4 words, 14 sentences marked `{{INVENTED}}`; an earlier history run on the same model gave 753 words, repeats 1.3% |
-| Offline tests (no GPU, no Ollama) | 50 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
+| Offline tests (no GPU, no Ollama) | 51 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
 
 Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks claims the lore does not support, `[S1]` marks facts that do):
 > On December 4, 1872, the *Dei Gratia* spotted her sailing erratically in the Atlantic [S1]. No one answered their signals, and a boarding party found the ship completely deserted [S1].

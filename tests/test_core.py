@@ -173,3 +173,10 @@ def test_multi_sentence_invented_mark_is_not_reported_as_uncited():
 
 def test_words_keep_accented_names_whole():
     assert checks.words("Félix Bruzzone") == ["félix", "bruzzone"]
+
+
+def test_unlabelled_double_braces_become_invented_marks_and_never_reach_clean_narration():
+    from ragscript.pipeline import Pipeline
+    fixed = Pipeline._clean("Plain. {{I sat in my office.}} {{invented: kept}} Done.")
+    assert fixed == "Plain. {{INVENTED: I sat in my office.}} {{invented: kept}} Done."
+    assert checks.clean_narration("A {{stray}} word {{INVENTED: x}}.") == "A stray word x."
