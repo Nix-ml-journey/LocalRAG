@@ -9,3 +9,6 @@ output/
 
 # books and training text are not redistributable
 data/
+
+# original books before they are cut into data/
+sources/
