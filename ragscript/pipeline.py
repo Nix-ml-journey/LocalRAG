@@ -1,12 +1,12 @@
-"""Multi-stage generation: hooks -> outline -> section-by-section writing -> polish -> checks -> markdown."""
+"""Multi-stage generation: hooks -> outline -> section-by-section writing -> refine -> checks -> markdown."""
 import json
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor
 
-from . import checks, chunking, config, render, vram, verify
+from . import checks, chunking, config, grounding, render, report, vram
 from . import genre as genre_pack
 from .llm import LLM
+from .refine import Refiner, clean_draft, section_issues, whole_sentences
 from .retrieve import Retriever
 from .sources import SourceLedger
 from .store import Store
@@ -19,49 +19,61 @@ def parse_json(s: str):
     return json.loads(m.group(0))
 
 
+def load_banned(cfg):
+    p = config.path(cfg, "banned_phrases")
+    if not p.exists():
+        return []
+    return [l.strip() for l in p.read_text(encoding="utf-8").splitlines() if l.strip() and not l.startswith("#")]
+
+
 class Pipeline:
-    def __init__(self):
-        self.cfg = config.load()
-        self.store = Store(self.cfg)
-        self.ret = Retriever(self.store, self.cfg)
-        self.llm = LLM(self.cfg)
-        self.banned = self._banned()
+    """The story pipeline. Dependencies are passed in: `ret` answers retrieval searches, `llm.chat(prompt, stage=...)`
+    answers model calls, `store` is only needed for ingest. `Pipeline.from_config()` builds the real ones."""
+
+    def __init__(self, cfg, ret, llm, store=None, banned=()):
+        self.cfg, self.ret, self.llm, self.store, self.banned = cfg, ret, llm, store, list(banned)
+        self.refiner = Refiner(self._ask, cfg, self.banned)
+
+    @classmethod
+    def from_config(cls, cfg=None):
+        cfg = cfg or config.load()
+        store = Store(cfg)
+        return cls(cfg, Retriever(store, cfg), LLM(cfg), store, load_banned(cfg))
 
     # ---- helpers -------------------------------------------------------
-    def _banned(self):
-        p = config.path(self.cfg, "banned_phrases")
-        if not p.exists():
-            return []
-        return [l.strip() for l in p.read_text(encoding="utf-8").splitlines() if l.strip() and not l.startswith("#")]
-
     def _tpl(self, name, **kw):
         t = (config.path(self.cfg, "prompts_dir") / "stages" / f"{name}.md").read_text(encoding="utf-8")
-        for k, v in kw.items():
+        shared = {"banned": "\n".join(self.banned), "sentence_range": config.sentence_range(self.cfg),
+                  "max_pause": self.cfg["style"]["max_pause_per_section"]}
+        for k, v in {**shared, **kw}.items():
             t = t.replace(f"<<{k}>>", str(v))
         return t
+
+    def _ask(self, stage, tpl_vars, **chat):
+        """One model call: the `stage` template filled with `tpl_vars`. The stage name travels with the call."""
+        return self.llm.chat(self._tpl(stage, **tpl_vars), stage=stage, **chat)
 
     def _k(self):
         return max(1, round(self.cfg["retrieval"]["final_k"] * self.llm.scale()))  # shrink if ctx was reduced
 
     def ingest(self):
-        return self.store.ingest(lambda text: self.llm.chat(self._tpl("tagger", text=text), temperature=0.1, max_tokens=200))
+        return self.store.ingest(lambda text: self._ask("tagger", {"text": text}, temperature=0.1, max_tokens=200))
 
     # ---- stage 1 -------------------------------------------------------
     def hooks(self, brief, genre, style=""):
         g = genre_pack.load(self.cfg, genre, style)
         ex = self.ret.search("hooks", brief, g.slug, beat="hook", k=self._k())
-        out = self.llm.chat(self._tpl(
-            "hooks", brief=brief, genre=g.slug, genre_rules=g.rules,
-            hook_examples="\n\n".join(f"- {c['text']}" for c in ex), banned="\n".join(self.banned)))
+        out = self._ask("hooks", dict(brief=brief, genre=g.slug, genre_rules=g.rules,
+                                      hook_examples="\n\n".join(f"- {c['text']}" for c in ex)))
         hooks = [h.strip() for h in re.split(r"(?m)^\s*\d+[.)]\s+", out)[1:] if h.strip()]
         return hooks[:3] or [out]
 
-    def _json(self, prompt, temps, check=lambda d: None, **kw):
+    def _json(self, stage, tpl_vars, temps, check=lambda d: None, **kw):
         """Model output parsed as JSON: one attempt per temperature in `temps`; `check` raises if the content is
         invalid. Returns None when no attempt works."""
         for t in temps:
             try:
-                data = parse_json(self.llm.chat(prompt, temperature=t, **kw))
+                data = parse_json(self._ask(stage, tpl_vars, temperature=t, **kw))
                 check(data)
                 return data
             except Exception as e:
@@ -71,8 +83,9 @@ class Pipeline:
     # ---- stage 2 -------------------------------------------------------
     def outline(self, brief, g, minutes, hook, lore_txt):
         total = minutes * self.cfg["script"]["wpm"]
-        prompt = self._tpl("outline", brief=brief, genre=g.slug, genre_rules=g.rules, hook=hook,
-                           minutes=minutes, total_words=total, lore=lore_txt)
+        tpl_vars = dict(brief=brief, genre=g.slug, genre_rules=g.rules, hook=hook, minutes=minutes,
+                        total_words=total, lore=lore_txt)
+
         def valid(d):
             assert d["beats"]
             for b in d["beats"]:  # "Rising Tension" -> rising_tension; the code compares beat ids exactly
@@ -80,8 +93,8 @@ class Pipeline:
                 assert b["beat"] in chunking.BEATS and int(b["words"]) > 0
 
         # thinking can use the whole token budget and return no JSON at all, so the retries run with thinking off
-        data = (self._json(prompt, (0.6,), valid, think=self.cfg["llm"]["think_outline"])
-                or self._json(prompt, (0.4, 0.2), valid, think=False))
+        data = (self._json("outline", tpl_vars, (0.6,), valid, think=self.cfg["llm"]["think_outline"])
+                or self._json("outline", tpl_vars, (0.4, 0.2), valid, think=False))
         if data is None:
             raise RuntimeError("could not get a valid outline from the model; try again or switch model")
         beats = data["beats"]
@@ -91,124 +104,17 @@ class Pipeline:
             b["words"] = b["orig"] = max(floor, round(int(b["words"]) * scale))
         return data.get("narrator", ""), beats, total
 
-    def _problems(self, text, b, earlier, grounded):
-        """Reasons a section draft must be regenerated (empty list = accept)."""
-        p, n = [], checks.spoken_count(text)
-        # models overshoot small budgets by 1.5-5x every time; the polish pass trims that, so a rewrite is
-        # only worth a call when the draft is far too long or too short
-        ln = self.cfg["length"]
-        if not ln["draft_min"] * b["words"] <= n <= ln["draft_max"] * b["words"]:
-            p.append(f"it was {n} words but must be about {b['words']}")
-        if checks.repeated_rate(text, self.cfg["checks"]["repeated_ngram"]) > self.cfg["checks"]["section_repeat"]:
-            p.append("it repeated its own paragraphs or refrains; mention each recurring detail at most once")
-        if earlier and checks.overlap_flags(text, [earlier], 4, self.cfg["checks"]["earlier_overlap"]):
-            p.append("it repeated earlier paragraphs; write only NEW events that move the story forward")
-        if checks.reused_quotes(text, earlier):
-            p.append("it repeated a quotation already used earlier; quote each source only once")
-        if grounded and (u := checks.uncited_facts(text)):
-            p.append("these sentences state names, dates or numbers with neither a [S#] citation nor an "
-                     "{{INVENTED: ...}} mark (cite them, mark them, or cut them): " + " | ".join(u[:3]))
-        if hits := checks.banned_hits(text, self.banned):
-            p.append("it used banned phrases: " + "; ".join(hits))
-        return p
-
-    def _flaws(self, text, earlier):
-        """Style problems of a finished section (length is the fit step's job). Empty list = fine."""
-        ck, p = self.cfg["checks"], []
-        if checks.repeated_rate(text, ck["repeated_ngram"]) > ck["section_repeat"]:
-            p.append("it repeats its own phrases or refrains; mention each recurring detail at most once")
-        if earlier and checks.overlap_flags(text, [earlier], 4, ck["earlier_overlap"]):
-            p.append("it retells earlier paragraphs; keep only new events")
-        if (n := checks.pause_count(text)) > 1:
-            p.append(f"it has {n} [PAUSE] cues; keep one at most, right before a reveal")
-        if checks.mixed_tense(text):
-            p.append("it switches between past and present tense; rewrite everything in the past tense")
-        if hits := checks.banned_hits(text, self.banned):
-            p.append("it uses banned phrases: " + "; ".join(hits))
-        return p
-
-    def _revise_weakest(self, parts, budgets, narrator, g, notes):
-        """One rewrite for the section with the most style flaws. Kept only if it has fewer flaws, stays near its
-        length and does not bring back repeats, so this step can only improve the script."""
-        earlier, flaws = "", []
-        for p in parts:
-            flaws.append(self._flaws(p, earlier))
-            earlier += "\n\n" + p
-        i = max(range(len(parts)), key=lambda j: len(flaws[j]))
-        if not flaws[i]:
-            return parts
-        before = checks.spoken_count(parts[i])
-        new = self.llm.chat(self._tpl(
-            "revise", text=parts[i], narrator=narrator, genre_rules=g.rules, banned="\n".join(self.banned),
-            problems="\n".join("- " + x for x in flaws[i]), target_words=before),
-            temperature=0.5, max_tokens=int(before * 2.2))
-        new = self._clean(self._whole_sentences(new))
-        ln = self.cfg["length"]
-        earlier = "\n\n".join(parts[:i])
-        ok = (ln["polish_min"] * before <= checks.spoken_count(new) <= ln["polish_max"] * before
-              and len(self._flaws(new, earlier)) < len(flaws[i]))
-        if ok:
-            notes.append(f"Revised section {i + 1} to fix: " + "; ".join(x.split(";")[0] for x in flaws[i]) + ".")
-            return parts[:i] + [new] + parts[i + 1:]
-        notes.append(f"Revision of section {i + 1} rejected; polished text kept.")
-        return parts
-
     def _write_section(self, prompt, b, earlier, grounded):
         # models write 3-5x a small word budget, so cap generation and cut the unfinished last sentence
         cap = int(b["words"] * self.cfg["length"]["token_cap"]) + 40
-        text = self._clean(self._whole_sentences(self.llm.chat(prompt, max_tokens=cap)))
-        problems = self._problems(text, b, earlier, grounded)
+        text = clean_draft(whole_sentences(self.llm.chat(prompt, stage="section", max_tokens=cap)))
+        problems = section_issues(text, earlier, self.cfg, self.banned, budget=b["words"], grounded=grounded)
         if problems:  # one corrective retry
             log.info("retry '%s': %s", b["beat"], "; ".join(p[:60] for p in problems))
-            text = self._clean(self._whole_sentences(self.llm.chat(
+            text = clean_draft(whole_sentences(self.llm.chat(
                 prompt + "\n\nPrevious attempt:\n" + text + "\n\nRewrite it; " + "; ".join(problems) + ".",
-                max_tokens=cap)))
+                stage="section", max_tokens=cap)))
         return text
-
-    @staticmethod
-    def _clean(text):
-        """Remove bracketed notes the model invented (e.g. "[recurring]"); only real cues and [S#] tags stay.
-        A {{...}} the model wrote without the INVENTED: label is the mark it meant, so it gets the label."""
-        text = re.sub(r"\{\{\s*(?!invented\s*:)(.*?)\}\}", r"{{INVENTED: \1}}", text, flags=re.S | re.I)
-        return re.sub(r"[ 	]*\[(?!(?:PAUSE|SFX:|B-ROLL:|S\d+\]))[^\]]*\]", "", text, flags=re.I)
-
-    @staticmethod
-    def _whole_sentences(text):
-        """Drop a trailing half-sentence left by the token cap (kept as is when it would lose over half the text)."""
-        text = text.rstrip()
-        if re.search(r"[.!?…\"”’')\]}]$", text):
-            return text
-        m = re.search(r"^(.*[.!?…][\"”’')\]}]*)", text, re.S)  # greedy: up to the last sentence end
-        return m.group(1) if m and len(m.group(1)) > len(text) / 2 else text
-
-    def _fit_length(self, parts, budgets, total, narrator, g, notes, max_calls=7):
-        """Final length control: while the script is more than fit_tolerance off target, rewrite the untried section furthest
-        over (or under) its budget. A rewrite is kept only if it moves the total toward the target AND leaves the
-        script free of repeats, so this step can never undo the anti-repetition pass."""
-        words = [checks.spoken_count(p) for p in parts]
-        tol, tried = self.cfg["length"]["fit_tolerance"], set()
-        for _ in range(max_calls):
-            n = sum(words)
-            if (1 - tol) * total <= n <= (1 + tol) * total:
-                break
-            sign = 1 if n > total else -1
-            i = max((j for j in range(len(parts)) if j not in tried), default=None,
-                    key=lambda j: sign * (words[j] - budgets[j]))
-            if i is None:
-                break
-            tried.add(i)
-            target = round(min(1.8, max(0.4, 1 + (total - n) / max(words[i], 1))) * words[i])
-            new = self.llm.chat(self._tpl(
-                "fit", text=parts[i], narrator=narrator, genre_rules=g.rules, banned="\n".join(self.banned),
-                current_words=words[i], target_words=target),
-                temperature=0.5, max_tokens=int(max(words[i], target) * 2.2))
-            trial = parts[:i] + [new] + parts[i + 1:]
-            joined, w = "\n\n".join(trial), checks.spoken_count(new)
-            # compare words, not layout: dedupe joins a line break after a full stop into a space
-            if abs(n - words[i] + w - total) < abs(n - total) and checks.dedupe(joined).split() == joined.split():
-                parts, words[i] = trial, w
-                notes.append(f"Length fit rewrote section {i + 1}: script is now {sum(words)} words (target {total}).")
-        return parts
 
     # ---- stage 3 + 4 ---------------------------------------------------
     def write(self, brief, genre, minutes, hook, style="", progress=print):
@@ -241,7 +147,7 @@ class Pipeline:
                 for x in beats[i:]:
                     x["words"] = max(30, round(x["orig"] * min(1.8, max(0.5, left))))
             k = self._k()  # re-read each beat: an OOM retry may have halved num_ctx
-            q =f"{b.get('title','')} {b.get('summary','')}"
+            q = f"{b.get('title','')} {b.get('summary','')}"
             style = self.ret.search("scripts", q, genre, beat=b["beat"], k=k) or self.ret.search("scripts", q, genre, k=k)
             if b["beat"] == "outro":  # use the endings library for the last beat
                 style += self.ret.search("hooks", q, genre, beat="ending", k=k)
@@ -258,90 +164,41 @@ class Pipeline:
                 "section", genre_rules=g.rules, narrator=narrator, outline=outline_txt, beat=beat_txt,
                 beat_words=b["words"], summary=summary + tail,
                 style_examples="\n\n".join(f"- {c['text']}" for c in style) or "(none)",
-                lore=cite(lore) or "(none)", banned="\n".join(self.banned))
+                lore=cite(lore) or "(none)")
             earlier = "\n\n".join(t for _, t in sections)
             text = self._write_section(prompt, b, earlier, g.grounded)
             # drop re-told paragraphs/sentences now so the rolling budget compensates for the lost words
             text = checks.dedupe(text, earlier) or text
             sections.append((b, text))
             if i < len(beats) - 1:  # the last summary would never be read
-                summary = self.llm.chat(self._tpl("summary", previous_summary=summary, new_text=text),
-                                        temperature=0.2, max_tokens=300)
+                summary = self._ask("summary", dict(previous_summary=summary, new_text=text),
+                                    temperature=0.2, max_tokens=300)
 
-        stage("Polishing…")
-        # per section: a whole-script polish call made the model loop and repeat paragraphs
-        rn = self.cfg["checks"]["repeated_ngram"]
-        def polish(bt):
-            b, t = bt
-            ref = min(checks.spoken_count(t), b["words"])  # trim an oversize draft to its budget, never pad a short one
-            p = self.llm.chat(self._tpl(
-                "polish", text=t, narrator=narrator, genre_rules=g.rules,
-                banned="\n".join(self.banned), target_words=ref),
-                temperature=0.5, max_tokens=int(checks.spoken_count(t) * 2.2))
-            ln = self.cfg["length"]
-            ok = (ln["polish_min"] * ref <= checks.spoken_count(p) <= ln["polish_max"] * ref
-                  and checks.repeated_rate(p, rn) <= checks.repeated_rate(t, rn) + 0.05)
-            return (p if ok else t), ok
-
-        # sections are independent here, so they can share the GPU; this only speeds up when the Ollama
-        # server runs with OLLAMA_NUM_PARALLEL >= llm.parallel (otherwise the requests just queue)
-        with ThreadPoolExecutor(self.cfg["llm"]["parallel"]) as pool:
-            results = list(pool.map(polish, sections))
-        for (b, _), (_, ok) in zip(sections, results):
-            if not ok:
-                notes.append(f"Polish of '{b['beat']}' rejected (length/repetition); draft kept.")
-        parts, earlier = [], ""
-        for p, _ in results:  # dedupe section by section so the structure survives for the length fit below
-            d = checks.dedupe(p, earlier) or p
-            if d != p:
-                notes.append("Removed paragraphs that repeated earlier ones.")
-            parts.append(d)
-            earlier += "\n\n" + d
-        stage("Revising weakest section…")
-        parts = self._revise_weakest(parts, [b["words"] for b, _ in sections], narrator, g, notes)
-        stage("Fitting length…")
-        parts = self._fit_length(parts, [b["words"] for b, _ in sections], total, narrator, g, notes)
+        parts = self.refiner.run(sections, total, narrator, g, notes, stage)
         script = checks.dedupe("\n\n".join(parts))  # final safety net: nothing repeated may reach the output
         if not g.grounded:  # [S#] tags only help fact-checking; ungrounded stories get them leaked by the model
             script = re.sub(r"[ \t]*\[S\d+\]", "", script)
         if g.grounded and ledger.cited_text:
             stage("Verifying…")
-            script, marked = verify.verify(script, ledger.cited_text, lambda lore, sent: self.llm.chat(
-                self._tpl("verify", lore=lore, sentence=sent), temperature=0.0, max_tokens=5))
+            script, marked = grounding.verify(script, ledger.cited_text, lambda lore, sent: self._ask(
+                "verify", dict(lore=lore, sentence=sent), temperature=0.0, max_tokens=5))
             if marked:
                 notes.append(f"Verify step marked {marked} unsupported sentence(s) as INVENTED.")
 
         stage("Packaging…")
-        pkg = self._json(self._tpl("package", genre=genre, brief=brief, outline=outline_txt,
-                                   excerpt=" ".join(script.split()[:500])), (0.7, 0.7), lambda d: d["titles"],
-                        max_tokens=800) or {}  # a list or text answer raises here and is retried, not crashed on in render
-        words_total = checks.spoken_count(script)
-        stats = {
-            "target_words": total, "words": words_total,
-            "word_accuracy": round(1 - abs(words_total - total) / total, 3),
-            "repeated_phrase_rate": round(checks.repeated_rate(script, rn), 4),
-            "avg_sentence_words": round(checks.avg_sentence_words(script), 1),
-            "overlap_flags": checks.overlap_flags(script, ledger.refs, self.cfg["checks"]["ngram"],
-                                                  self.cfg["checks"]["overlap_threshold"]),
-            "banned_hits": checks.banned_hits(script, self.banned),
-            "pause_cues": checks.pause_count(script), "minutes": minutes,
-            "mixed_tense": checks.mixed_tense(script), "overused_words": checks.overused_words(script),
-            "invented": checks.invented(script), "notes": notes,
-            "unsupported_cites": checks.unsupported_cites(script, ledger.cited_text) if g.grounded else [],
-            "uncited_facts": checks.uncited_facts(script) if g.grounded else [],
-        }
-        # chapter times: each beat's share of the polished length, at wpm
-        weights = [checks.spoken_count(t) or 1 for _, t in sections]
-        scale = words_total / sum(weights)
-        chapters, acc = [], 0
-        for (b, _), w in zip(sections, weights):
-            chapters.append((int(acc * scale / wpm * 60), b.get("title") or b["beat"]))
-            acc += w
-        md = render.render(brief, genre, minutes, narrator, pkg, script, chapters, ledger.used(), stats)
+        pkg = self._json("package", dict(genre=genre, brief=brief, outline=outline_txt,
+                                         excerpt=" ".join(script.split()[:500])), (0.7, 0.7),
+                         lambda d: d["titles"], max_tokens=800) or {}  # a list or text answer raises here and is retried
+        rep = report.build(script, target_words=total, minutes=minutes, refs=ledger.refs, cited_text=ledger.cited_text,
+                           grounded=g.grounded, banned=self.banned, cfg=self.cfg, notes=notes)
+        doc = render.Doc(brief, genre, minutes, narrator, pkg,
+                         render.chapters([(b, checks.spoken_count(t)) for b, t in sections], rep.words, wpm),
+                         ledger.used())
+        md = render.render(doc, script, rep)
         out = config.path(self.cfg, "output_dir")
         out.mkdir(exist_ok=True)
         slug = re.sub(r"[^a-z0-9]+", "-", brief.lower())[:50].strip("-") or "script"
         path = out / f"{genre}-{minutes}min-{slug}.md"
         path.write_text(md, encoding="utf-8")
         vram.log_stage("done")
-        return {"path": path, "markdown": md, "stats": stats}
+        return {"path": path, "markdown": md, "stats": rep}

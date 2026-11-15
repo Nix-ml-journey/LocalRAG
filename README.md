@@ -41,7 +41,7 @@ Measured on this machine (num_ctx 16384). Rows other than the fantasy row were m
 | Polish stage with `OLLAMA_NUM_PARALLEL=2` | 18.7 s down to 12.0 s, peak GPU 11.8 to 13.3 GB |
 | Fantasy 5-min script, two runs on gemma4:12b (target 750) | 753 / 762 words, accuracy 99.6% / 98.4%, repeats 0.3% / 1.6%, sentences 14.8 / 14.9 words, 407-695 s each, peak VRAM 10.7 GB |
 | History 5-min script on gemma4:12b, after the Verify upgrade | 722 words (accuracy 96.3%), repeats 4.3%, sentences 14.4 words, 14 sentences marked `{{INVENTED}}`; an earlier history run on the same model gave 753 words, repeats 1.3% |
-| Offline tests (no GPU, no Ollama) | 55 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
+| Offline tests (no GPU, no Ollama) | 59 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
 
 Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks claims the lore does not support, `[S1]` marks facts that do):
 > On December 4, 1872, the *Dei Gratia* spotted her sailing erratically in the Atlantic [S1]. No one answered their signals, and a boarding party found the ship completely deserted [S1].
@@ -60,15 +60,17 @@ Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks 
 - **Invented bracket notes are stripped.** Only `[PAUSE]`, `[SFX:]`, `[B-ROLL:]` and `[S#]` survive.
 - **gemma4:12b is the writing model.** In a same-brief test against the model it replaced it had better accuracy, fewer repeats and lower peak VRAM (10.7 GB), and more concrete prose, but it is 2-3x slower (407-695 s per 5-min script). Sentences run long at 14.8-14.9 words.
 - **Style flaws get one targeted rewrite.** After polish, the section with the most flaws (repeated phrases, more than one `[PAUSE]`, a past/present tense switch, banned phrases) is rewritten once, and the rewrite is kept only if it has fewer flaws. Every genre also gets shared rules (past tense throughout, one `[PAUSE]` per section at most). The outline step tries thinking once and then retries with thinking off, because thinking could use the whole token budget and return no JSON.
-- **One sentence splitter.** Two checks once split sentences differently, so "J. Habakuk" counted as two sentences and a mid-sentence `[S1]` tag cut a claim in half before Verify judged it. All checks now share `checks.sentences()`.
+- **One sentence splitter.** Two checks once split sentences differently, so "J. Habakuk" counted as two sentences and a mid-sentence `[S1]` tag cut a claim in half before Verify judged it. All checks now share `text.sentences()`.
 - **Models:** gemma4:12b (writing) and BAAI/bge-m3 (embeddings). Models are not included; each has its own licence.
 
 ## Code layout
-- `ragscript/pipeline.py`: the stages (hooks, outline, write, polish, length fit, package). `verify.py` is the Verify step, `sources.py` numbers the cited chunks.
-- `ragscript/checks.py`: every pure text check (repeats, overlap, citations, length). `checks.sentences()` is the only sentence splitter.
-- `ragscript/store.py` + `retrieve.py`: Chroma/BM25 index and hybrid search. `chunking.py`, `loaders.py`, `metadata.py` feed `ingest`.
-- `ragscript/llm.py` (Ollama, OOM retry), `genre.py`, `render.py`, `vram.py`. Entry points: `cli.py`, `app.py`, `main.py`.
-- `config.yaml` holds every tuning number (`length:`, `checks:`); `prompts/` holds the stage and genre prompts.
+- `ragscript/pipeline.py`: hooks, outline and section writing. Dependencies are passed in (`Pipeline(cfg, retriever, llm)`); `Pipeline.from_config()` builds the real ones. Every model call carries its stage name (`llm.chat(prompt, stage="outline")`), so test doubles never match on prompt text.
+- `ragscript/refine.py`: everything after a section is drafted: `section_issues()` (the one place section quality is judged), polish, rewrite of the weakest section, length fit. `Refiner.run` is its interface.
+- `ragscript/grounding.py`: `[S#]` citations, the `{{INVENTED: ...}}` mark protocol and the Verify step. `text.py` has the one sentence splitter and tokenizer; `checks.py` the checks on the narration (repeats, overlap, tense, crutch words).
+- `ragscript/report.py` + `render.py`: `Report` holds every measurement of a finished script; `render` turns a `Doc` plus the script plus the `Report` into markdown. A new check is a field in `Report` and a line in `render`.
+- `ragscript/store.py` + `retrieve.py`: Chroma/BM25 index (`Store.where` and `Store.matches` are the same genre/beat filter) and hybrid search. `chunking.py`, `loaders.py`, `metadata.py` feed `ingest`; `sources.py` numbers the cited chunks.
+- `ragscript/llm.py` (Ollama, OOM retry), `genre.py`, `vram.py`. Entry points: `cli.py`, `app.py`, `main.py`.
+- `config.yaml` holds every tuning number (`style:`, `length:`, `checks:`). `style:` (sentence length, `[PAUSE]` limit) is filled into the prompts and the checks, so it is tuned in one place; `prompts/` holds the stage and genre prompts.
 
 ## Limitations
 - Single user, single machine; no concurrency design beyond the polish step.
@@ -105,7 +107,7 @@ python app.py                                          # Gradio UI at http://127
 python main.py                                         # optional HTTP service on :8000 (/vector_store/query, /vector_store/insert) for the StoryForge pipeline
 python cli.py eval [--retrieval-only]                  # 17 briefs in eval/briefs.yaml (also prints top-1/3/10 source ranks; a full run adds `[PAUSE]` per minute, tense switches and sentence length)
 python cli.py eval --compare-rerank [MODEL]            # retrieval only: reranker off vs on, with timing
-python -m eval.rerun3 <label>                          # 3 real 5-minute scripts -> output/<label>/ (about 13 min)
+python cli.py eval --ids b01,b03,b08 --minutes 5 --label NAME   # quick regression: 3 real 5-minute scripts -> output/NAME/ + stats.json (about 13 min)
 python -m eval.lore_check data/history/lore_*.md       # before ingesting lore: garbled text, front-matter, length, names/years seen once
 pip install -r requirements-dev.txt && python -m pytest tests   # model-free self-checks
 ```

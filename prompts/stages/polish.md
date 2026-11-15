@@ -17,11 +17,11 @@ Target length: <<target_words>> words. Stay within plus or minus 5% of it.
 Edit for:
 - Pacing: vary sentence length, cut dead air, keep momentum.
 - Repetition: cut repeated words, ideas and sentence openings, and any sound, smell or image mentioned more than once.
-- Sentence rhythm: a narrator reads this aloud on camera, and strings of 4-6 word sentences sound clipped and robotic. The average must be 10-15 words per sentence. Join fragments into medium sentences with "and", "as", "while" or "because"; keep a short sentence (3-6 words) only for impact, never two in a row. Most sentences should land between 10 and 18 words.
+- Sentence rhythm: a narrator reads this aloud on camera, and strings of 4-6 word sentences sound clipped and robotic. The average must be <<sentence_range>> words per sentence. Join fragments into medium sentences with "and", "as", "while" or "because"; keep a short sentence (3-6 words) only for impact, never two in a row. Most sentences should land between 10 and 18 words.
 - Easy to speak: replace hard-to-pronounce phrases and tongue-twisting names where a simpler wording keeps the meaning.
 - Narrator consistency: voice, age, job, and the recurring details from the bible.
 - Tense: past tense throughout. Change any present-tense narration to past.
-- Cues: keep every [SFX: ...], [B-ROLL: ...], {{INVENTED: ...}} mark and [S#] tag exactly as marked. Keep at most one [PAUSE], right before a reveal; remove extras.
+- Cues: keep every [SFX: ...], [B-ROLL: ...], {{INVENTED: ...}} mark and [S#] tag exactly as marked. Keep at most <<max_pause>> [PAUSE], right before a reveal; remove extras.
 - Do not add new plot, facts, names or characters.
 
 Rhythm example (shows sentence length only; never copy its wording or content):

@@ -30,11 +30,11 @@ class LengthLLM(FakeLLM):
         self.section_words, self.mode, self.fit_calls, self.counter = section_words, mode, 0, 0
 
     def chat(self, prompt, **kw):
-        if prompt.startswith("You are writing one section"):
+        if kw.get("stage") == "section":
             text = pseudo(len(self.written) * 400, self.section_words)
             self.written.append(text)
             return text
-        if prompt.startswith("You are a length editor"):
+        if kw.get("stage") == "fit":
             self.fit_calls += 1
             target = int(re.search(r"to about (\d+) words", prompt).group(1))
             text = prompt.split("Section to rewrite:\n", 1)[1].strip()
@@ -49,11 +49,10 @@ class LengthLLM(FakeLLM):
 
 
 def run(tmp_path, llm):
-    p = Pipeline.__new__(Pipeline)
-    p.cfg = config.load()
-    p.cfg["llm"]["parallel"] = 1
-    p.cfg["paths"]["output_dir"] = str(tmp_path)
-    p.ret, p.llm, p.banned = FakeRetriever(), llm, []
+    cfg = config.load()
+    cfg["llm"]["parallel"] = 1
+    cfg["paths"]["output_dir"] = str(tmp_path)
+    p = Pipeline(cfg, FakeRetriever(), llm)
     md = p.write("a guard keeps seeing himself", "horror", 5, "hook text", progress=lambda m: None)["markdown"]
     return md[md.index("## Script") + 9: md.index("## Chapters")].strip()
 

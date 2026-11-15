@@ -9,7 +9,7 @@ from ragscript.pipeline import Pipeline
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
 logging.getLogger("httpx").setLevel(logging.WARNING)
-pl = Pipeline()
+pl = Pipeline.from_config()
 
 
 def do_ingest():

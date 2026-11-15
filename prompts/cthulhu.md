@@ -6,5 +6,5 @@ CTHULHU / COSMIC HORROR STYLE RULES
 - Madness is quiet: lost time, compulsions, a calm that is worse than panic. No screaming breakdowns.
 - Period details are welcome (1920s-30s, or modern with old roots). Keep names easy to pronounce aloud.
 - Use original entities and places or generic cosmic imagery. Do not use Lovecraft's own names or reproduce protected text. Avoid the stock words "eldritch", "unspeakable" and "non-Euclidean".
-- Put [PAUSE] right before the cold truth lands; save a very short sentence for the punch line. Elsewhere sentences average 10-15 words, restrained, no exclamation marks.
+- Put [PAUSE] right before the cold truth lands; save a very short sentence for the punch line. Elsewhere sentences average <<sentence_range>> words, restrained, no exclamation marks.
 - End on an unresolved truth the narrator cannot unlearn.

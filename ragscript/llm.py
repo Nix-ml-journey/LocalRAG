@@ -25,7 +25,8 @@ class LLM:
         """How much smaller than configured the context is now (shrink retrieval accordingly)."""
         return self.ctx / self.c["num_ctx"]
 
-    def chat(self, prompt: str, think: bool = False, temperature=None, max_tokens=None) -> str:
+    def chat(self, prompt: str, think: bool = False, temperature=None, max_tokens=None, stage: str = "") -> str:
+        """One model call. `stage` only names the call in the log; callers and test doubles may also key on it."""
         while True:
             opts = {"num_ctx": self.ctx,
                     "temperature": self.c["temperature"] if temperature is None else temperature,
@@ -40,7 +41,7 @@ class LLM:
                 vram.log_stage("llm")
                 # prompt_eval_count counts only tokens NOT served from Ollama's prefix cache
                 out = getattr(r, "eval_count", 0) or 0
-                log.info("llm %-30r %5.1fs  in(new)=%s out=%s  %.0f tok/s", prompt[:30],
+                log.info("llm %-30r %5.1fs  in(new)=%s out=%s  %.0f tok/s", stage or prompt[:30],
                          (getattr(r, "total_duration", 0) or 0) / 1e9, getattr(r, "prompt_eval_count", "?"), out,
                          out / max((getattr(r, "eval_duration", 0) or 1) / 1e9, 1e-9))
                 return re.sub(r"<think>.*?</think>", "", r["message"]["content"], flags=re.S).strip()

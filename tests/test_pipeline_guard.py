@@ -37,10 +37,10 @@ class FakeLLM:
         return 1.0
 
     def chat(self, prompt, **kw):
-        if prompt.startswith("You are a story architect"):
+        if kw.get("stage") == "outline":
             beats = [{"beat": b, "title": b, "words": 107, "summary": f"{b} scene"} for b in BEATS]
             return '{"narrator": "Eli, a night guard", "beats": %s}' % str(beats).replace("'", '"')
-        if prompt.startswith("You are writing one section"):
+        if kw.get("stage") == "section":
             if "Previous attempt:" in prompt:  # corrective retry: the real model repeats itself again
                 return self.written[-1]
             k = len(self.written)
@@ -52,26 +52,25 @@ class FakeLLM:
                 text = f"{fresh}\n\n{retold}"
             self.written.append(text)
             return text
-        if prompt.startswith("You are a script editor"):
+        if kw.get("stage") == "polish":
             self.polished += 1
             return self.written[self.polished - 1]  # polish keeps the (already deduped) draft's repeats if any survive
-        if prompt.startswith("You are a length editor"):  # a model that does not change the section
+        if kw.get("stage") == "fit":  # a model that does not change the section
             return prompt.split("Section to rewrite:\n", 1)[1].strip()
-        if prompt.startswith("You are revising one section"):  # a model that does not fix anything
+        if kw.get("stage") == "revise":  # a model that does not fix anything
             return prompt.split("Section to revise:\n", 1)[1].split("\n\nFix exactly", 1)[0].strip()
-        if prompt.startswith("You maintain a rolling summary"):
+        if kw.get("stage") == "summary":
             return "summary"
-        if prompt.startswith("You are packaging"):
+        if kw.get("stage") == "package":
             return '{"titles": ["a","b","c","d","e"], "thumbnails": ["x","y","z"], "description": "d", "tags": ["t"]}'
         raise AssertionError("unexpected prompt: " + prompt[:40])
 
 
 def run(tmp_path):
-    p = Pipeline.__new__(Pipeline)  # skip __init__: no Chroma, no embedder, no Ollama
-    p.cfg = config.load()
-    p.cfg["llm"]["parallel"] = 1
-    p.cfg["paths"]["output_dir"] = str(tmp_path)
-    p.ret, p.llm, p.banned = FakeRetriever(), FakeLLM(), []
+    cfg = config.load()
+    cfg["llm"]["parallel"] = 1
+    cfg["paths"]["output_dir"] = str(tmp_path)
+    p = Pipeline(cfg, FakeRetriever(), FakeLLM())  # no Chroma, no embedder, no Ollama
     md = p.write("a guard keeps seeing himself", "horror", 5, "hook text", progress=lambda m: None)["markdown"]
     return md[md.index("## Script") + 9: md.index("## Chapters")].strip()
 
@@ -95,8 +94,8 @@ def test_guard_has_teeth(tmp_path, monkeypatch):
 
 
 def test_clean_strips_invented_brackets_but_keeps_cues():
-    from ragscript.pipeline import Pipeline
+    from ragscript import refine
     t = "I sharpened my quill [recurring]. [PAUSE] Wind rose [SFX: wind] over the fort [S2] [B-ROLL: the fort]."
-    out = Pipeline._clean(t)
+    out = refine.clean_draft(t)
     assert "[recurring]" not in out
     assert all(c in out for c in ("[PAUSE]", "[SFX: wind]", "[S2]", "[B-ROLL: the fort]"))

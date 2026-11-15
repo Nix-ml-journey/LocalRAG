@@ -27,14 +27,14 @@ Banned phrases (never use):
 Rules:
 - Write ONLY this beat's narration, in first person and past tense from the first word to the last. Never switch to present tense.
 - Spoken language: contractions, easy to say aloud. No hard-to-pronounce lists.
-- Sentence rhythm: the narrator reads this aloud on camera, and strings of 4-6 word sentences sound clipped and robotic. The average must be 10-15 words per sentence. Write in runs of three: two medium sentences (12-20 words) that carry the action and detail, then at most one short sentence (3-6 words) for impact. Never put two short sentences in a row, and never start consecutive sentences with the same word.
+- Sentence rhythm: the narrator reads this aloud on camera, and strings of 4-6 word sentences sound clipped and robotic. The average must be <<sentence_range>> words per sentence. Write in runs of three: two medium sentences (12-20 words) that carry the action and detail, then at most one short sentence (3-6 words) for impact. Never put two short sentences in a row, and never start consecutive sentences with the same word.
 Rhythm example (shows sentence length only; never copy its wording or content):
 Too choppy: The door was old. It creaked. I pushed it open. Dust fell. The room was dark. I stepped inside.
 Right: The old door creaked as I pushed it open, and a thin curtain of dust drifted down past the lantern light. I stepped into the dark room. Nothing moved.
 Join an action to its detail with "and", "as", "while" or "because" instead of a full stop.
 - Every sentence must add something new: an action, a detail or a thought. Never restate what was already said, in this section or in earlier ones. Mention a sound, smell or image once, not again.
 - Start with a new event, place or moment that is not in the story so far. Do not summarize the story, do not repeat earlier beats, do not resolve beyond this beat.
-- Cues go on their own line and sparingly: at most one [PAUSE] (only right before a reveal), and [SFX: description] or [B-ROLL: description] only when it adds something the words do not. The only square-bracket items allowed are these cues and [S#] lore tags; never write notes such as [recurring] or [detail].
+- Cues go on their own line and sparingly: at most <<max_pause>> [PAUSE] (only right before a reveal), and [SFX: description] or [B-ROLL: description] only when it adds something the words do not. The only square-bracket items allowed are these cues and [S#] lore tags; never write notes such as [recurring] or [detail].
 - If the genre rules contain a GROUNDED rule, obey it strictly (facts only from the lore chunks, invented details wrapped as {{INVENTED: ...}}).
 - Before you answer, silently count the words in your sentences; if the average is under 10, merge neighbouring sentences with "and", "as", "while" or "because" and recount. Do not mention the count.
 - No title, no headings, no commentary. Output only the narration.

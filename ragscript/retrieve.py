@@ -1,5 +1,5 @@
 """Hybrid retrieval: dense (Chroma) + BM25 -> reciprocal rank fusion -> optional cross-encoder rerank."""
-from .store import tok
+from .store import Store
 
 
 class Retriever:
@@ -12,29 +12,15 @@ class Retriever:
         col = self.store.cols[coll]
         if col.count() == 0:
             return []
-        where = {"genre": {"$in": [genre, "any"]}}
-        if beat:
-            where = {"$and": [where, {"beat": beat}]}
-
-        def ok(m):
-            return m.get("genre") in (genre, "any") and (not beat or m.get("beat") == beat)
-
-        docs = {d["id"]: {"id": d["id"], "text": d["text"], "meta": d["meta"]}
-                for d in self.store.dense(col, query, r["candidates"], where)}
-        ranks = [list(docs)]
-
-        bm, ids, texts, metas = self.store.bm25(coll)
-        scores = bm.get_scores(tok(query))
-        top = sorted((j for j in range(len(ids)) if scores[j] > 0 and ok(metas[j])),
-                     key=lambda j: -scores[j])[: r["candidates"]]
-        for j in top:
-            docs.setdefault(ids[j], {"id": ids[j], "text": texts[j], "meta": metas[j]})
-        ranks.append([ids[j] for j in top])
+        dense = [{"id": d["id"], "text": d["text"], "meta": d["meta"]}
+                 for d in self.store.dense(col, query, r["candidates"], Store.where(genre, beat))]
+        lexical = self.store.lexical(coll, query, r["candidates"], genre, beat)
+        docs = {d["id"]: d for d in dense + lexical}
 
         fused = {}
-        for lst in ranks:
-            for pos, i in enumerate(lst):
-                fused[i] = fused.get(i, 0) + 1 / (r["rrf_k"] + pos + 1)
+        for ranked in (dense, lexical):
+            for pos, d in enumerate(ranked):
+                fused[d["id"]] = fused.get(d["id"], 0) + 1 / (r["rrf_k"] + pos + 1)
         out = [docs[i] for i in sorted(fused, key=fused.get, reverse=True)]
 
         if self.cfg["reranker"]["enabled"] and out:

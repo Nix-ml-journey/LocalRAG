@@ -6,5 +6,5 @@ FANTASY STYLE RULES
 - Sensory grounding: weather, food, tools, fatigue. No generic "ancient evil" or "chosen one" framing unless the story subverts it.
 - Voice: warm, wry or weary, matching the narrator bible. Humor in small doses is fine.
 - Stakes escalate with each beat; the climax is a choice, not just a fight.
-- Plain spoken English, no info-dumps, no stacked adjectives. Sentences average 10-15 words, mixing short and medium.
+- Plain spoken English, no info-dumps, no stacked adjectives. Sentences average <<sentence_range>> words, mixing short and medium.
 - End with a consequence and a sense the world goes on.

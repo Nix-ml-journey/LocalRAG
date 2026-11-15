@@ -48,13 +48,31 @@ class Store:
         return [{"id": i, "text": d, "meta": m, "distance": x}
                 for i, d, m, x in zip(r["ids"][0], r["documents"][0], r["metadatas"][0], r["distances"][0])]
 
-    def bm25(self, name):
-        """(bm25, ids, docs, metas) built lazily from Chroma, cleared after ingest."""
+    @staticmethod
+    def where(genre, beat=None):
+        """The Chroma filter for `genre` (plus the shared "any" genre) and optionally one beat. `matches` below is
+        the same filter as a Python test; the two live side by side so they cannot drift apart."""
+        w = {"genre": {"$in": [genre, "any"]}}
+        return {"$and": [w, {"beat": beat}]} if beat else w
+
+    @staticmethod
+    def matches(meta, genre, beat=None):
+        return meta.get("genre") in (genre, "any") and (not beat or meta.get("beat") == beat)
+
+    def lexical(self, name, query, n, genre, beat=None):
+        """BM25 matches of one collection for the same filter as `where`: [{id, text, meta}], best first. The index
+        is built lazily from Chroma and dropped after ingest."""
         if name not in self._bm25:
             d = self.cols[name].get()
             bm = BM25Okapi([tok(t) for t in d["documents"]]) if d["documents"] else None
             self._bm25[name] = (bm, d["ids"], d["documents"], d["metadatas"])
-        return self._bm25[name]
+        bm, ids, texts, metas = self._bm25[name]
+        if bm is None:
+            return []
+        scores = bm.get_scores(tok(query))
+        top = sorted((j for j in range(len(ids)) if scores[j] > 0 and self.matches(metas[j], genre, beat)),
+                     key=lambda j: -scores[j])[:n]
+        return [{"id": ids[j], "text": texts[j], "meta": metas[j]} for j in top]
 
     def _remove(self, rel):
         for c in self.cols.values():

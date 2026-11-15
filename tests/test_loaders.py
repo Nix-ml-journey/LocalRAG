@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ragscript import loaders
+from ragscript import text as txt
 
 
 def make_epub(path):
@@ -48,7 +49,7 @@ def test_unhyphenate_joins_split_words_but_keeps_compounds():
 
 def test_splitter_does_not_end_a_sentence_at_a_closing_quote_before_a_lowercase_word():
     from ragscript import checks
-    assert len(checks.sentences('He read "J. Habakuk Jephson" aloud. It ended.')) == 2
+    assert len(txt.sentences('He read "J. Habakuk Jephson" aloud. It ended.')) == 2
 
 
 def test_pdf_soft_hyphens_are_removed_with_their_gap(tmp_path, monkeypatch):

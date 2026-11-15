@@ -15,12 +15,10 @@ CFG = config.load()
 
 
 def pipeline(tmp_path, llm, retriever=None):
-    p = Pipeline.__new__(Pipeline)
-    p.cfg = config.load()
-    p.cfg["llm"]["parallel"] = 1
-    p.cfg["paths"]["output_dir"] = str(tmp_path)
-    p.ret, p.llm, p.banned = retriever or FakeRetriever(), llm, []
-    return p
+    cfg = config.load()
+    cfg["llm"]["parallel"] = 1
+    cfg["paths"]["output_dir"] = str(tmp_path)
+    return Pipeline(cfg, retriever or FakeRetriever(), llm)
 
 
 def write(p, genre="horror"):
@@ -32,7 +30,7 @@ def test_package_answer_that_is_not_an_object_is_retried(tmp_path):
         packs = 0
 
         def chat(self, prompt, **kw):
-            if prompt.startswith("You are packaging"):
+            if kw.get("stage") == "package":
                 self.packs += 1
                 return '["a", "b"]' if self.packs == 1 else super().chat(prompt, **kw)
             return super().chat(prompt, **kw)
@@ -47,13 +45,13 @@ def test_outline_with_loose_beat_names_and_bad_words_is_fixed_or_retried(tmp_pat
         outlines, section_prompts = 0, []
 
         def chat(self, prompt, **kw):
-            if prompt.startswith("You are a story architect"):
+            if kw.get("stage") == "outline":
                 self.outlines += 1
                 names = [b.title().replace("_", " ") for b in BEATS]  # "Hook", "Rising Tension"...
                 words = "about 100" if self.outlines == 1 else 107
                 beats = [{"beat": n, "title": n, "words": words, "summary": "s"} for n in names]
                 return json.dumps({"narrator": "Eli", "beats": beats})
-            if prompt.startswith("You are writing one section"):
+            if kw.get("stage") == "section":
                 self.section_prompts.append(prompt)
             return super().chat(prompt, **kw)
 
@@ -81,11 +79,11 @@ def test_verify_uses_the_lore_chunk_that_matches_the_sentence(tmp_path):
 
     class L(FakeLLM):
         def chat(self, prompt, **kw):
-            if prompt.startswith("You are a strict fact checker"):
+            if kw.get("stage") == "verify":
                 lore, sentence = prompt.split("Sentence from the script:")
                 return "YES" if "Morehouse" in sentence and "Gibraltar in November" in lore else "NO"
             text = super().chat(prompt, **kw)
-            if prompt.startswith("You are writing one section") and not self.written[1:]:
+            if kw.get("stage") == "section" and not self.written[1:]:
                 text = fact + " " + text
                 self.written[-1] = text
             return text
@@ -100,7 +98,7 @@ def test_length_fit_accepts_a_rewrite_with_a_line_break(tmp_path):
     class L(LengthLLM):
         def chat(self, prompt, **kw):
             out = super().chat(prompt, **kw)
-            if prompt.startswith("You are a length editor"):
+            if kw.get("stage") == "fit":
                 w = out.split()
                 out = " ".join(w[:5]) + ".\n" + " ".join(w[5:])  # a break after a full stop is what dedupe flattens
             return out
@@ -140,7 +138,7 @@ def test_outline_retries_with_thinking_off_when_thinking_returns_no_json(tmp_pat
         think_flags = []
 
         def chat(self, prompt, **kw):
-            if prompt.startswith("You are a story architect"):
+            if kw.get("stage") == "outline":
                 self.think_flags.append(kw.get("think"))
                 if kw.get("think"):
                     return "I am still thinking about the story..."  # budget spent, no JSON
@@ -152,23 +150,19 @@ def test_outline_retries_with_thinking_off_when_thinking_returns_no_json(tmp_pat
 
 
 def test_weakest_section_is_revised_only_when_the_rewrite_has_fewer_flaws(tmp_path):
-    p = pipeline(tmp_path, FakeLLM())
     from ragscript import genre
-    g = genre.load(p.cfg, "horror")
+    from ragscript.refine import Refiner
+    cfg = config.load()
+    g = genre.load(cfg, "horror")
     bad = "I walked in. [PAUSE] I see the door. [PAUSE] I knew it. [PAUSE] I find the key. I looked up."
     good = "I walked in and saw the door. I knew it was locked. [PAUSE] I found the key."
 
-    class R:
-        def __init__(self, out): self.out = out
-        def chat(self, prompt, **kw): return self.out
-
     parts, notes = ["Plain text here.", bad], []
-    p.llm = R(good)
-    out = p._revise_weakest(parts, [10, 10], "Eli", g, notes)
+    out = Refiner(lambda stage, vars, **kw: good, cfg, []).revise_weakest(parts, "Eli", g, notes)
     assert out[1] == good and out[0] == parts[0] and "Revised section 2" in notes[0]
     notes.clear()
-    p.llm = R(bad)  # a rewrite that fixes nothing is not kept
-    assert p._revise_weakest(parts, [10, 10], "Eli", g, notes) == parts and "rejected" in notes[0]
+    # a rewrite that fixes nothing is not kept
+    assert Refiner(lambda stage, vars, **kw: bad, cfg, []).revise_weakest(parts, "Eli", g, notes) == parts and "rejected" in notes[0]
 
 
 def test_every_genre_gets_the_shared_tense_and_pause_rules(tmp_path):
@@ -178,9 +172,50 @@ def test_every_genre_gets_the_shared_tense_and_pause_rules(tmp_path):
 
 
 def test_cue_tense_and_crutch_word_checks():
-    assert checks.pause_count("a [PAUSE] b [PAUSE] c [B-ROLL: x]") == 2
     assert checks.mixed_tense("I walked in. I saw it. I knew. I see the door. I hear it. I feel cold.")
     assert not checks.mixed_tense("I walked in. I saw it. I knew. I found the key. She runs.")
     assert not checks.mixed_tense("She walked in and saw him.")  # third person never fires
     text = " ".join(["The heavy door shut."] * 6 + ["Then silence fell over everything we owned here."] * 2)
     assert checks.overused_words(text)[0][0] == "heavy"
+
+
+def test_store_filter_exists_once_as_chroma_where_and_python_test(tmp_path, monkeypatch):
+    from ragscript.store import Store
+    cfg = config.load()
+    cfg["paths"].update(data_dir=str(tmp_path / "data"), chroma_dir=str(tmp_path / "db"), state_file=str(tmp_path / "db/s.json"))
+    fm = "---\nsubgenre: s\ntone: t\npov: first\n---\n"
+    for genre, name, word in (("horror", "a", "tide"), ("fantasy", "a", "tide"), ("horror", "b", "lantern"),
+                              ("horror", "c", "ladder"), ("horror", "d", "cellar"), ("horror", "e", "window")):
+        (tmp_path / "data" / genre).mkdir(parents=True, exist_ok=True)
+        (tmp_path / "data" / genre / f"{name}.txt").write_text(fm + f"The {word} stood near the old {genre} wall. " * 60, encoding="utf-8")
+    st = Store(cfg)
+    monkeypatch.setattr(st, "embed", lambda texts: [[1.0, 0.0] for _ in texts])
+    st.ingest(lambda text: "{}")
+    hits = st.lexical("scripts", "tide", 5, "horror")
+    assert hits and all(h["meta"]["genre"] == "horror" for h in hits)  # the fantasy file is filtered out
+    assert Store.matches({"genre": "any"}, "horror") and not Store.matches({"genre": "fantasy"}, "horror")
+    assert not Store.matches({"genre": "horror", "beat": "hook"}, "horror", "setup")
+    assert Store.where("horror", "hook") == {"$and": [{"genre": {"$in": ["horror", "any"]}}, {"beat": "hook"}]}
+    assert st.lexical("scripts", "tide", 5, "cthulhu") == []
+
+
+def test_section_issues_judge_drafts_and_finished_sections_with_one_function():
+    from ragscript.refine import section_issues
+    cfg = config.load()
+    twice = "I walked in. [PAUSE] I see the door. [PAUSE] I knew it. [PAUSE] I find the key. I hear a step. I looked up."
+    assert not section_issues(twice, "", cfg, [])  # a draft is not judged on cues
+    styled = section_issues(twice, "", cfg, [], style=True)
+    assert any("[PAUSE]" in x for x in styled) and any("tense" in x for x in styled)
+    assert section_issues("word " * 400, "", cfg, [], budget=100)[0].startswith("it was 400 words")
+    assert section_issues("A fine line.", "", cfg, ["fine line"], style=True) == ["it used banned phrases: fine line"]
+
+
+def test_report_measures_the_script_and_only_fact_checks_grounded_genres():
+    from ragscript import report
+    cfg = config.load()
+    script = "Captain Briggs sailed in 1872. [PAUSE] {{INVENTED: A cold wind rose.}}"
+    kw = dict(target_words=10, minutes=5, refs=[], cited_text={}, banned=[], cfg=cfg, notes=[])
+    plain = report.build(script, grounded=False, **kw)
+    assert plain.uncited_facts == [] and plain.pause_cues == 1 and plain.invented == ["A cold wind rose."]
+    assert report.build(script, grounded=True, **kw).uncited_facts == ["Captain Briggs sailed in 1872."]
+    assert plain.sentence_range == "10-15"

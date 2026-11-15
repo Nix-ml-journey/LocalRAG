@@ -10,4 +10,4 @@ HISTORY MYSTERY STYLE RULES
 - Present competing theories fairly and say which are speculation.
 - Structure: a puzzling fact, the documented record, the gaps, the theories, an honest open ending.
 - Tone: curious, measured, a little haunted. Let the mystery carry the tension. Use each atmosphere image (a sound, a smell, a light) once; do not return to it.
-- Spoken language, easy-to-say names; explain unfamiliar terms briefly. Sentences average 10-15 words, mixing short and medium.
+- Spoken language, easy-to-say names; explain unfamiliar terms briefly. Sentences average <<sentence_range>> words, mixing short and medium.

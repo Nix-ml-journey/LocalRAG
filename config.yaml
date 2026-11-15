@@ -40,6 +40,10 @@ chunking:
 script:
   wpm: 150
 
+style:                      # narration targets: the prompts and the checks both read these, so tune them here only
+  sentence_words: [10, 15]  # average spoken words per sentence
+  max_pause_per_section: 1  # [PAUSE] cues allowed in one section
+
 checks:
   ngram: 5
   overlap_threshold: 0.8    # flag passages whose 5-grams are >80% present in a source chunk
