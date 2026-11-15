@@ -13,9 +13,10 @@ Banned phrases (never use, even in altered form):
 <<banned>>
 
 Task: write exactly 3 different hook options for the opening of this video.
-- Each hook is 60-120 words, first person, spoken language, sentences averaging about 8-12 words (a little punchier than the body), mixing short and medium.
+- Each hook is 60-120 words, first person, past tense, spoken language, sentences averaging about 8-12 words (a little punchier than the body), mixing short and medium.
 - Each starts in a concrete moment or with a specific odd detail, not a generic statement.
 - Each uses a different angle (for example: an object, a sound, a confession).
+- Each ends on a question or an unresolved detail. Never reveal the central secret, the twist or the ending in the hook.
 - No headings, no commentary, no intro line.
 
 Format strictly:

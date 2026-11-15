@@ -14,4 +14,4 @@ Section to revise:
 Fix exactly these problems and change nothing else that works:
 <<problems>>
 
-Keep the same events, the same facts and about <<target_words>> words. Keep any [S#] tags, {{INVENTED: ...}} marks and cues such as [B-ROLL: ...] that still apply. Output ONLY the revised section text.
+Keep the same events and the same facts, in the past tense, at about <<target_words>> words. Do not add new facts, names or events. Keep any [S#] tags, {{INVENTED: ...}} marks and cues such as [B-ROLL: ...] that still apply. Output ONLY the revised section text.
