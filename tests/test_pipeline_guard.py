@@ -57,6 +57,8 @@ class FakeLLM:
             return self.written[self.polished - 1]  # polish keeps the (already deduped) draft's repeats if any survive
         if prompt.startswith("You are a length editor"):  # a model that does not change the section
             return prompt.split("Section to rewrite:\n", 1)[1].strip()
+        if prompt.startswith("You are revising one section"):  # a model that does not fix anything
+            return prompt.split("Section to revise:\n", 1)[1].split("\n\nFix exactly", 1)[0].strip()
         if prompt.startswith("You maintain a rolling summary"):
             return "summary"
         if prompt.startswith("You are packaging"):

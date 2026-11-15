@@ -7,6 +7,5 @@ SCI-FI STYLE RULES
 - Paranoia stays personal: the narrator doubts their own memory, their boss, their tools. No chosen-one plots, no rogue-AI takeover, no galactic wars.
 - Dry, deadpan humour when the narrator is under pressure: a bureaucratic reply shown as a scene (a clerk, a form, a help line), not a paragraph about rules. One joke per section, short, and it must not defuse the stakes.
 - Invented terms: at most 3 per section, short and easy to say aloud, each made clear by how it is used. No jargon dumps.
-- Plain spoken English in the past tense throughout; never switch to present tense. No stacked adjectives, no exclamation marks. Sentences average 10-15 words and tighten to 5-8 only right before a reveal.
-- [PAUSE]: at most one per section, only right before a reveal. Do not use it for ordinary beats.
+- Plain spoken English. No stacked adjectives, no exclamation marks. Sentences average 10-15 words and tighten to 5-8 only right before a reveal.
 - End on a changed understanding or an unsettling question. Do not end with a tidy fix, a twist explanation or "it was all a dream".

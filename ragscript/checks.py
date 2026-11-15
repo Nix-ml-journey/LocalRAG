@@ -118,6 +118,43 @@ def repeated_rate(text, n) -> float:
     return sum(v for v in c.values() if v > 1) / len(grams)
 
 
+def pause_count(text) -> int:
+    return len(re.findall(r"\[PAUSE\]", text))
+
+
+_PRESENT = r"am|see|hear|feel|walk|stand|look|know|think|find|kick|reach|run|take|go|watch|step|move|have|can|do|don't|cannot|stare|wipe|open|close|hold|turn|pull|push|follow|wait|listen|say|ask|tell|try|want|need|notice|realize"
+_PAST = r"was|saw|heard|felt|walked|stood|looked|knew|thought|found|kicked|reached|ran|took|went|watched|stepped|moved|had|could|did|didn't|couldn't|stared|wiped|opened|closed|held|turned|pulled|pushed|followed|waited|listened|said|asked|told|tried|wanted|needed|noticed|realized"
+
+
+def tense_mix(text):
+    """(present, past) counts of first-person verbs ("I see" / "I saw"). A narrator who uses both in meaningful
+    numbers switched tense; the heuristic only looks at "I" + verb, so it never fires on third-person scripts."""
+    plain = re.sub(r"\[[^\]]*\]|\{\{INVENTED:|\}\}", " ", text)
+    pres = len(re.findall(rf"\bI (?:{_PRESENT})\b", plain))
+    past = len(re.findall(rf"\bI (?:{_PAST})\b", plain))
+    return pres, past
+
+
+def mixed_tense(text, floor=3, share=0.2) -> bool:
+    pres, past = tense_mix(text)
+    return min(pres, past) >= floor and min(pres, past) / (pres + past) >= share
+
+
+_STOP = set("""about above after again against along also always another around because before behind being below between
+beyond could doing during every exactly except further having himself herself itself might never often other
+should since still than their theirs them themselves there these they those though through under until upon
+very were what when where whether which while whose would your yours yourself""".split())
+
+
+def overused_words(text, min_count=5, share=0.006, top=5):
+    """Content words (5+ letters) that recur far more than natural prose does: the crutch words a small model
+    leans on ("heavy", "hum"). Returns [(word, count)], most frequent first."""
+    w = [x for x in words(re.sub(r"\{\{INVENTED:|\}\}", " ", text)) if len(x) >= 5 and x not in _STOP]
+    total = max(1, len(words(text)))
+    c = Counter(w)
+    return [(k, v) for k, v in c.most_common(top * 3) if v >= min_count and v / total >= share][:top]
+
+
 def banned_hits(text, phrases):
     low = text.lower()
     return [p for p in phrases if p.lower() in low]

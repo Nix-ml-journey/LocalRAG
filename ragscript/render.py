@@ -24,6 +24,12 @@ def render(brief, genre, minutes, narrator, pkg, script, chapters, sources, stat
          f"- Word accuracy: {stats['word_accuracy']:.1%}",
          f"- Repeated-phrase rate: {stats['repeated_phrase_rate']:.1%}",
          f"- Average sentence length: {stats['avg_sentence_words']} words (natural narration is about 10-15)"]
+    if stats.get("overused_words"):
+        L.append("- Words used often (crutch words, consider varying): " + ", ".join(f"{w} ×{n}" for w, n in stats["overused_words"]))
+    if stats.get("mixed_tense"):
+        L.append("- **Tense switches between past and present in the narration (check before recording).**")
+    if stats.get("pause_cues", 0) > 2 * stats.get("minutes", 5):
+        L.append(f"- {stats['pause_cues']} [PAUSE] cues in {stats['minutes']} minutes: more than 2 a minute reads as halting")
     if stats["overlap_flags"]:
         L += ["- **>80% overlap with a source (rewrite these):**"] + [f"  - ({r}) {p}…" for p, r in stats["overlap_flags"]]
     else:

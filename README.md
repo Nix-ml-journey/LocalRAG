@@ -14,7 +14,8 @@ flowchart LR
     R[(Hybrid retrieval<br/>Chroma + BM25 + RRF<br/>style / lore / hooks)] --> W
     W --> P[Polish each beat]
     P --> D[Repeat guard]
-    D --> F[Length fit to +/-10%]
+    D --> RV[Rewrite the weakest section]
+    RV --> F[Length fit to +/-10%]
     F --> V[Verify facts<br/>grounded genres]
     V --> M[Markdown: titles, thumbnails,<br/>script, chapters, tags, checks]
 ```
@@ -40,7 +41,7 @@ Measured on this machine (num_ctx 16384). Rows other than the fantasy row were m
 | Polish stage with `OLLAMA_NUM_PARALLEL=2` | 18.7 s down to 12.0 s, peak GPU 11.8 to 13.3 GB |
 | Fantasy 5-min script, two runs on gemma4:12b (target 750) | 753 / 762 words, accuracy 99.6% / 98.4%, repeats 0.3% / 1.6%, sentences 14.8 / 14.9 words, 407-695 s each, peak VRAM 10.7 GB |
 | History 5-min script on gemma4:12b, after the Verify upgrade | 722 words (accuracy 96.3%), repeats 4.3%, sentences 14.4 words, 14 sentences marked `{{INVENTED}}`; an earlier history run on the same model gave 753 words, repeats 1.3% |
-| Offline tests (no GPU, no Ollama) | 51 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
+| Offline tests (no GPU, no Ollama) | 55 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
 
 Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks claims the lore does not support, `[S1]` marks facts that do):
 > On December 4, 1872, the *Dei Gratia* spotted her sailing erratically in the Atlantic [S1]. No one answered their signals, and a boarding party found the ship completely deserted [S1].
@@ -58,6 +59,7 @@ Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks 
 - **The rolling summary is labelled "already told".** It was labelled "Summary" and the model retold it; relabelling cut repeated phrases from 8.8% to 2.2% in one run.
 - **Invented bracket notes are stripped.** Only `[PAUSE]`, `[SFX:]`, `[B-ROLL:]` and `[S#]` survive.
 - **gemma4:12b is the writing model.** In a same-brief test against the model it replaced it had better accuracy, fewer repeats and lower peak VRAM (10.7 GB), and more concrete prose, but it is 2-3x slower (407-695 s per 5-min script). Sentences run long at 14.8-14.9 words.
+- **Style flaws get one targeted rewrite.** After polish, the section with the most flaws (repeated phrases, more than one `[PAUSE]`, a past/present tense switch, banned phrases) is rewritten once, and the rewrite is kept only if it has fewer flaws. Every genre also gets shared rules (past tense throughout, one `[PAUSE]` per section at most). The outline step tries thinking once and then retries with thinking off, because thinking could use the whole token budget and return no JSON.
 - **One sentence splitter.** Two checks once split sentences differently, so "J. Habakuk" counted as two sentences and a mid-sentence `[S1]` tag cut a claim in half before Verify judged it. All checks now share `checks.sentences()`.
 - **Models:** gemma4:12b (writing) and BAAI/bge-m3 (embeddings). Models are not included; each has its own licence.
 
@@ -70,9 +72,9 @@ Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks 
 
 ## Limitations
 - Single user, single machine; no concurrency design beyond the polish step.
-- Retrieval is judged on 14 briefs; script quality on the 3-brief check plus reading, not a user study.
+- Retrieval is judged on 17 briefs; script quality on the 3-brief check plus reading, not a user study.
 - Average sentence length is now about 13-15 words (target 10-15); gemma4 runs at the long end. Read aloud before recording.
-- The Verify step is strict: it can mark a true paraphrase as `INVENTED`, and the model still reuses atmosphere lines (a repeated-phrase rate of 4.3% showed up in one history run). Word-level repetition is not checked yet.
+- The Verify step is strict: it can mark a true paraphrase as `INVENTED`, and the model still reuses atmosphere lines (a repeated-phrase rate of 4.3% showed up in one history run). The Checks section now lists crutch words (content words used far more often than natural prose), tense switches and `[PAUSE]` density, but only reports them.
 - History facts come from a small set of lore notes (6 topics). Fact-check every `{{INVENTED}}` mark and the
   Checks section before publishing.
 - The books and scripts used as style data are **not** in this repository (see below).
@@ -101,7 +103,7 @@ python cli.py write "The lost colony of Roanoke" --genre history --minutes 10 --
 python cli.py write "A tech finds the ship AI is lying" --genre sci-fi --style "wry, practical details" --minutes 5
 python app.py                                          # Gradio UI at http://127.0.0.1:7860
 python main.py                                         # optional HTTP service on :8000 (/vector_store/query, /vector_store/insert) for the StoryForge pipeline
-python cli.py eval [--retrieval-only]                  # 14 briefs in eval/briefs.yaml (also prints top-1/3/10 source ranks)
+python cli.py eval [--retrieval-only]                  # 17 briefs in eval/briefs.yaml (also prints top-1/3/10 source ranks; a full run adds `[PAUSE]` per minute, tense switches and sentence length)
 python cli.py eval --compare-rerank [MODEL]            # retrieval only: reranker off vs on, with timing
 python -m eval.rerun3 <label>                          # 3 real 5-minute scripts -> output/<label>/ (about 13 min)
 python -m eval.lore_check data/history/lore_*.md       # before ingesting lore: garbled text, front-matter, length, names/years seen once

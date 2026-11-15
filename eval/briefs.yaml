@@ -68,3 +68,18 @@
   minutes: 10
   brief: A city clerk in Strasbourg records the summer of 1518 when people danced in the streets for days.
   expect_sources: [lore_dancing_plague_1518]
+- id: b15
+  genre: sci-fi
+  minutes: 5
+  brief: A courier delivers a parcel to an address that was demolished years ago, yet the recipient signs for it.
+  expect_sources: [dick_Ubik]
+- id: b16
+  genre: horror
+  minutes: 10
+  brief: A guest in a country house tower room realises the previous occupant's dream is repeating in his own sleep.
+  expect_sources: [benson_The_Room_in_the_Tower]
+- id: b17
+  genre: literary
+  minutes: 10
+  brief: A widow keeps setting a second place at the table and the neighbours slowly start to ask why.
+  expect_sources: [literary]

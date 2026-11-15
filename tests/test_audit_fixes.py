@@ -133,3 +133,54 @@ def test_deleted_file_leaves_no_chunks_even_if_its_tagging_failed(tmp_path, monk
     assert st.ingest(tagger_down)["scripts"] > 0  # indexed, but the file is not marked done
     f.unlink()
     assert st.ingest(tagger_down) == {"scripts": 0, "lore": 0, "hooks": 0}
+
+
+def test_outline_retries_with_thinking_off_when_thinking_returns_no_json(tmp_path):
+    class L(FakeLLM):
+        think_flags = []
+
+        def chat(self, prompt, **kw):
+            if prompt.startswith("You are a story architect"):
+                self.think_flags.append(kw.get("think"))
+                if kw.get("think"):
+                    return "I am still thinking about the story..."  # budget spent, no JSON
+            return super().chat(prompt, **kw)
+
+    llm = L()
+    write(pipeline(tmp_path, llm))
+    assert llm.think_flags[0] is True and llm.think_flags[1:] == [False], "one thinking attempt, then plain ones"
+
+
+def test_weakest_section_is_revised_only_when_the_rewrite_has_fewer_flaws(tmp_path):
+    p = pipeline(tmp_path, FakeLLM())
+    from ragscript import genre
+    g = genre.load(p.cfg, "horror")
+    bad = "I walked in. [PAUSE] I see the door. [PAUSE] I knew it. [PAUSE] I find the key. I looked up."
+    good = "I walked in and saw the door. I knew it was locked. [PAUSE] I found the key."
+
+    class R:
+        def __init__(self, out): self.out = out
+        def chat(self, prompt, **kw): return self.out
+
+    parts, notes = ["Plain text here.", bad], []
+    p.llm = R(good)
+    out = p._revise_weakest(parts, [10, 10], "Eli", g, notes)
+    assert out[1] == good and out[0] == parts[0] and "Revised section 2" in notes[0]
+    notes.clear()
+    p.llm = R(bad)  # a rewrite that fixes nothing is not kept
+    assert p._revise_weakest(parts, [10, 10], "Eli", g, notes) == parts and "rejected" in notes[0]
+
+
+def test_every_genre_gets_the_shared_tense_and_pause_rules(tmp_path):
+    from ragscript import genre
+    for name in ("horror", "history", "sci-fi", "unknown-genre"):
+        assert "past tense" in genre.load(CFG, name).rules and "[PAUSE]" in genre.load(CFG, name).rules
+
+
+def test_cue_tense_and_crutch_word_checks():
+    assert checks.pause_count("a [PAUSE] b [PAUSE] c [B-ROLL: x]") == 2
+    assert checks.mixed_tense("I walked in. I saw it. I knew. I see the door. I hear it. I feel cold.")
+    assert not checks.mixed_tense("I walked in. I saw it. I knew. I found the key. She runs.")
+    assert not checks.mixed_tense("She walked in and saw him.")  # third person never fires
+    text = " ".join(["The heavy door shut."] * 6 + ["Then silence fell over everything we owned here."] * 2)
+    assert checks.overused_words(text)[0][0] == "heavy"

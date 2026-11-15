@@ -46,7 +46,7 @@ def run(retrieval_only=False):
     logging.basicConfig(level=logging.WARNING)
     briefs = load_briefs()
     pl = Pipeline()
-    hits, acc, rep = [], [], []
+    hits, acc, rep, flags = [], [], [], []
     for b in briefs:
         got = {c["meta"]["source"] for coll in ("lore", "scripts", "hooks")
                for c in pl.ret.search(coll, b["brief"], b["genre"])}
@@ -59,13 +59,18 @@ def run(retrieval_only=False):
             s = pl.write(b["brief"], b["genre"], b["minutes"], h, progress=lambda m: None)["stats"]
             acc.append(s["word_accuracy"])
             rep.append(s["repeated_phrase_rate"])
-            line += f" words={s['words']}/{s['target_words']} rep={s['repeated_phrase_rate']:.1%}"
+            flags.append((s["pause_cues"] / b["minutes"], s["mixed_tense"], s["avg_sentence_words"]))
+            line += (f" words={s['words']}/{s['target_words']} rep={s['repeated_phrase_rate']:.1%}"
+                     f" pauses/min={flags[-1][0]:.1f} tense={'MIXED' if s['mixed_tense'] else 'ok'} sent={s['avg_sentence_words']}")
         print(line)
     print(f"\nRetrieval hit rate: {sum(hits)}/{len(hits)}")
     print("Expected sources by rank: " + "  ".join(f"{k}={v:.2f}" for k, v in rank_metrics(pl, briefs).items()))
     if acc:
         print(f"Word-count accuracy (mean): {statistics.mean(acc):.1%}")
         print(f"Repeated-phrase rate (mean): {statistics.mean(rep):.1%}")
+        print(f"[PAUSE] cues per minute (mean): {statistics.mean(f[0] for f in flags):.1f}   "
+              f"scripts with mixed tense: {sum(f[1] for f in flags)}/{len(flags)}   "
+              f"sentence length (mean): {statistics.mean(f[2] for f in flags):.1f} words")
 
 
 if __name__ == "__main__":

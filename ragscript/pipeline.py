@@ -79,7 +79,9 @@ class Pipeline:
                 b["beat"] = str(b["beat"]).strip().lower().replace(" ", "_")
                 assert b["beat"] in chunking.BEATS and int(b["words"]) > 0
 
-        data = self._json(prompt, (0.6, 0.2), valid, think=self.cfg["llm"]["think_outline"])
+        # thinking can use the whole token budget and return no JSON at all, so the retries run with thinking off
+        data = (self._json(prompt, (0.6,), valid, think=self.cfg["llm"]["think_outline"])
+                or self._json(prompt, (0.4, 0.2), valid, think=False))
         if data is None:
             raise RuntimeError("could not get a valid outline from the model; try again or switch model")
         beats = data["beats"]
@@ -109,6 +111,47 @@ class Pipeline:
         if hits := checks.banned_hits(text, self.banned):
             p.append("it used banned phrases: " + "; ".join(hits))
         return p
+
+    def _flaws(self, text, earlier):
+        """Style problems of a finished section (length is the fit step's job). Empty list = fine."""
+        ck, p = self.cfg["checks"], []
+        if checks.repeated_rate(text, ck["repeated_ngram"]) > ck["section_repeat"]:
+            p.append("it repeats its own phrases or refrains; mention each recurring detail at most once")
+        if earlier and checks.overlap_flags(text, [earlier], 4, ck["earlier_overlap"]):
+            p.append("it retells earlier paragraphs; keep only new events")
+        if (n := checks.pause_count(text)) > 1:
+            p.append(f"it has {n} [PAUSE] cues; keep one at most, right before a reveal")
+        if checks.mixed_tense(text):
+            p.append("it switches between past and present tense; rewrite everything in the past tense")
+        if hits := checks.banned_hits(text, self.banned):
+            p.append("it uses banned phrases: " + "; ".join(hits))
+        return p
+
+    def _revise_weakest(self, parts, budgets, narrator, g, notes):
+        """One rewrite for the section with the most style flaws. Kept only if it has fewer flaws, stays near its
+        length and does not bring back repeats, so this step can only improve the script."""
+        earlier, flaws = "", []
+        for p in parts:
+            flaws.append(self._flaws(p, earlier))
+            earlier += "\n\n" + p
+        i = max(range(len(parts)), key=lambda j: len(flaws[j]))
+        if not flaws[i]:
+            return parts
+        before = checks.spoken_count(parts[i])
+        new = self.llm.chat(self._tpl(
+            "revise", text=parts[i], narrator=narrator, genre_rules=g.rules, banned="\n".join(self.banned),
+            problems="\n".join("- " + x for x in flaws[i]), target_words=before),
+            temperature=0.5, max_tokens=int(before * 2.2))
+        new = self._clean(self._whole_sentences(new))
+        ln = self.cfg["length"]
+        earlier = "\n\n".join(parts[:i])
+        ok = (ln["polish_min"] * before <= checks.spoken_count(new) <= ln["polish_max"] * before
+              and len(self._flaws(new, earlier)) < len(flaws[i]))
+        if ok:
+            notes.append(f"Revised section {i + 1} to fix: " + "; ".join(x.split(";")[0] for x in flaws[i]) + ".")
+            return parts[:i] + [new] + parts[i + 1:]
+        notes.append(f"Revision of section {i + 1} rejected; polished text kept.")
+        return parts
 
     def _write_section(self, prompt, b, earlier, grounded):
         # models write 3-5x a small word budget, so cap generation and cut the unfinished last sentence
@@ -254,6 +297,8 @@ class Pipeline:
                 notes.append("Removed paragraphs that repeated earlier ones.")
             parts.append(d)
             earlier += "\n\n" + d
+        stage("Revising weakest section…")
+        parts = self._revise_weakest(parts, [b["words"] for b, _ in sections], narrator, g, notes)
         stage("Fitting length…")
         parts = self._fit_length(parts, [b["words"] for b, _ in sections], total, narrator, g, notes)
         script = checks.dedupe("\n\n".join(parts))  # final safety net: nothing repeated may reach the output
@@ -279,6 +324,8 @@ class Pipeline:
             "overlap_flags": checks.overlap_flags(script, ledger.refs, self.cfg["checks"]["ngram"],
                                                   self.cfg["checks"]["overlap_threshold"]),
             "banned_hits": checks.banned_hits(script, self.banned),
+            "pause_cues": checks.pause_count(script), "minutes": minutes,
+            "mixed_tense": checks.mixed_tense(script), "overused_words": checks.overused_words(script),
             "invented": checks.invented(script), "notes": notes,
             "unsupported_cites": checks.unsupported_cites(script, ledger.cited_text) if g.grounded else [],
             "uncited_facts": checks.uncited_facts(script) if g.grounded else [],
