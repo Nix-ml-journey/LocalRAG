@@ -97,7 +97,8 @@ _PAST = r"was|saw|heard|felt|walked|stood|looked|knew|thought|found|kicked|reach
 def tense_mix(text):
     """(present, past) counts of first-person verbs ("I see" / "I saw"). A narrator who uses both in meaningful
     numbers switched tense; the heuristic only looks at "I" + verb, so it never fires on third-person scripts."""
-    plain = unmark(CUE.sub(" ", text))
+    # quoted speech keeps its own tense ("I don't know," she said), so only the narration is counted
+    plain = re.sub(r"[“\"][^”\"]*[”\"]", " ", unmark(CUE.sub(" ", text)))
     pres = len(re.findall(rf"\bI (?:{_PRESENT})\b", plain))
     past = len(re.findall(rf"\bI (?:{_PAST})\b", plain))
     return pres, past
@@ -121,6 +122,52 @@ def overused_words(text, min_count=5, share=0.006, top=5):
     total = max(1, len(words(text)))
     c = Counter(w)
     return [(k, v) for k, v in c.most_common(top * 3) if v >= min_count and v / total >= share][:top]
+
+
+_FUNC = _STOP | set("""that with from this they them were been have into over like just when then than what your
+does some only more each even also very much such back there here will""".split())
+
+
+def _pairs(text):
+    """Counter of pairs of consecutive content words (function words skipped, one sentence at a time):
+    "the smell of ozone" and "smell like ozone" both count as ("smell", "ozone")."""
+    c = Counter()
+    for s in sentences(unmark(text)):
+        cw = [w for w in words(s) if len(w) >= 4 and w not in _FUNC]
+        c.update(zip(cw, cw[1:]))
+    return c
+
+
+def crowded_phrases(text, min_count=3, top=5):
+    """[(phrase, count)] for the images (two content words) that return `min_count`+ times in the text."""
+    return [(" ".join(k), v) for k, v in _pairs(text).most_common(top * 2) if v >= min_count][:top]
+
+
+def repeated_phrases(text, earlier, min_count=3):
+    """[(phrase, total)] for images in `text` that were already used in `earlier` and, counting both, appear
+    `min_count`+ times: the sensory anchors a small model brings back in every section."""
+    before, now = _pairs(earlier), _pairs(text)
+    return [(" ".join(k), before[k] + v) for k, v in now.items() if before[k] and before[k] + v >= min_count]
+
+
+def repeated_lines(text, earlier="", min_words=2):
+    """Sentences of `min_words`+ words that already appear word for word in `earlier` or earlier in `text`: the
+    short refrains ("It was watching me back.") the 4-gram repeat guards cannot see."""
+    seen = {tuple(words(s)) for s in sentences(earlier) if len(words(s)) >= min_words}
+    out = []
+    for s in sentences(text):
+        w = tuple(words(s))
+        if len(w) >= min_words:
+            if w in seen:
+                out.append(s.strip())
+            seen.add(w)
+    return out
+
+
+def crowded_words(text, limit=3):
+    """[(word, count)] for content words (5+ letters) used `limit` or more times in one stretch of text."""
+    c = Counter(x for x in words(unmark(text)) if len(x) >= 5 and x not in _STOP)
+    return [(w, n) for w, n in c.most_common() if n >= limit]
 
 
 def banned_hits(text, phrases):

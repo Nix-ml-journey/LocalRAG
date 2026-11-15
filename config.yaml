@@ -50,6 +50,9 @@ checks:
   repeated_ngram: 4         # repeated-phrase rate uses this n
   section_repeat: 0.08      # a section draft is rewritten when more than this share of its 4-grams repeat
   earlier_overlap: 0.6      # ... or when more than this share of a paragraph's 4-grams were already written
+  phrase_repeat: 4          # ... an image (two content words, e.g. smell + ozone) used this often in the script: the narrator's recurring details are allowed 3
+  word_repeat: 3            # the weakest-section rewrite flags a content word used this often in one section
+  revise_sections: 2        # ... and rewrites at most this many sections, worst first
 
 length:                     # tuned against the README results; change one at a time and re-measure
   draft_min: 0.75           # a section draft is accepted between draft_min and draft_max x its word budget

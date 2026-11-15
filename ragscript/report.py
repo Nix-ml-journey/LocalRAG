@@ -22,6 +22,7 @@ class Report:
     minutes: int
     mixed_tense: bool
     overused_words: list
+    repeated_images: list = field(default_factory=list)  # [(phrase, count)] returning through the script
     notes: list = field(default_factory=list)
 
 
@@ -41,4 +42,5 @@ def build(script, *, target_words, minutes, refs, cited_text, grounded, banned, 
         unsupported_cites=grounding.unsupported_cites(script, cited_text) if grounded else [],
         uncited_facts=grounding.uncited_facts(script) if grounded else [],
         pause_cues=script.count("[PAUSE]"), minutes=minutes,
-        mixed_tense=checks.mixed_tense(script), overused_words=checks.overused_words(script), notes=notes)
+        mixed_tense=checks.mixed_tense(script), overused_words=checks.overused_words(script),
+        repeated_images=checks.crowded_phrases(script, cfg["checks"]["phrase_repeat"]), notes=notes)

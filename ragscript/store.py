@@ -101,12 +101,20 @@ class Store:
             self._remove(rel)
             if self._index_file(f, rel, h, state, llm_tag_fn):  # an untagged file stays "changed": next ingest retries
                 state["files"][rel] = h
+                self._save(sf, state)  # per file: an interrupted ingest resumes here instead of redoing everything
         self._prune(seen, state)
-        sf.parent.mkdir(parents=True, exist_ok=True)
-        sf.write_text(json.dumps(state, indent=1))
+        self._save(sf, state)
         self._bm25.clear()
         vram.log_stage("ingest done")
         return {n: c.count() for n, c in self.cols.items()}
+
+    @staticmethod
+    def _save(sf, state):
+        """Write the ingest state through a temp file, so a kill during the write cannot leave broken JSON."""
+        sf.parent.mkdir(parents=True, exist_ok=True)
+        tmp = sf.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, indent=1))
+        tmp.replace(sf)
 
     @staticmethod
     def _files(data, seen):

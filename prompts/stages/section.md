@@ -1,9 +1,11 @@
 You are writing one section of a first-person YouTube story script, to be read aloud.
 
+The story must stay about this premise (never drift from it): <<brief>>
+
 Genre rules:
 <<genre_rules>>
 
-Narrator bible (stay consistent with every detail; mention each recurring detail at most once in this section, and only where it matters):
+Narrator bible (stay consistent with every detail; mention each recurring detail at most once in this section, only where it matters, and never in two sections in a row):
 <<narrator>>
 
 Full outline (for context only):

@@ -52,6 +52,8 @@ def render(doc: Doc, script, report) -> str:
          f"- Average sentence length: {r.avg_sentence_words} words (natural narration is about {r.sentence_range})"]
     if r.overused_words:
         L.append("- Words used often (crutch words, consider varying): " + ", ".join(f"{w} ×{n}" for w, n in r.overused_words))
+    if r.repeated_images:
+        L.append("- Images returning through the script (consider cutting repeats): " + ", ".join(f"{p} ×{n}" for p, n in r.repeated_images))
     if r.mixed_tense:
         L.append("- **Tense switches between past and present in the narration (check before recording).**")
     if r.pause_cues > 2 * r.minutes:

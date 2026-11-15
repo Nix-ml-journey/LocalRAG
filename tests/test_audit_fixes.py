@@ -219,3 +219,116 @@ def test_report_measures_the_script_and_only_fact_checks_grounded_genres():
     assert plain.uncited_facts == [] and plain.pause_cues == 1 and plain.invented == ["A cold wind rose."]
     assert report.build(script, grounded=True, **kw).uncited_facts == ["Captain Briggs sailed in 1872."]
     assert plain.sentence_range == "10-15"
+
+
+def test_short_refrains_repeated_across_sections_are_caught():
+    earlier = "The monitor hummed. [PAUSE] It was watching me back."
+    text = "I froze in the hall. [PAUSE] It was watching me back. Then it smiled. Then it smiled."
+    assert checks.repeated_lines(text, earlier) == ["It was watching me back.", "Then it smiled."]
+    assert checks.repeated_lines("A new line here.", earlier) == []
+    assert checks.crowded_words("The heavy door was heavy and the heavy latch stuck.", 3) == [("heavy", 3)]
+    assert checks.crowded_words("A heavy door and a light latch.", 3) == []
+
+
+def test_section_issues_flag_reused_lines_and_crowded_words_only_in_style_mode():
+    from ragscript.refine import section_issues
+    cfg = config.load()
+    earlier = "It was watching me back."
+    text = "The metal door was cold. It was watching me back. I touched the metal frame, then the metal latch."
+    assert not section_issues(text, earlier, cfg, [])  # drafts are not judged on this
+    issues = section_issues(text, earlier, cfg, [], style=True)
+    assert any("reuses lines" in x for x in issues) and any("metal (x3)" in x for x in issues)
+
+
+def test_revision_pass_fixes_up_to_the_configured_number_of_sections():
+    from ragscript import genre
+    from ragscript.refine import Refiner
+    cfg = config.load()
+    g = genre.load(cfg, "horror")
+    bad = "I walked in. [PAUSE] I stood still. [PAUSE] I found the key."
+    fixed = "I walked in and stood still. I found the key."
+    parts, notes = ["Fine start here.", bad, bad.replace("key", "lock"), bad.replace("key", "door")], []
+    calls = []
+
+    def ask(stage, vars, **kw):
+        calls.append(stage)
+        return fixed
+
+    out = Refiner(ask, cfg, []).revise_weakest(parts, "Eli", g, notes)
+    assert calls == ["revise"] * cfg["checks"]["revise_sections"]  # two rewrites, not three
+    assert sum(1 for p in out if p == fixed) == cfg["checks"]["revise_sections"] and out[0] == parts[0]
+
+
+def test_images_that_return_through_the_script_are_found_across_word_forms():
+    text = ("The smell of ozone hung in the hall. I heard the clink of my keys. Smell of ozone filled the vault. "
+            "The clink of my keys followed me. A smell like ozone stung my nose.")
+    assert checks.crowded_phrases(text, 3) == [("smell ozone", 3)]  # "clink keys" is only twice
+    earlier = "The smell of ozone hung in the hall. The smell of ozone grew."
+    assert checks.repeated_phrases("I breathed the smell of ozone again.", earlier) == [("smell ozone", 3)]
+    assert checks.repeated_phrases("I breathed fresh sea air.", earlier) == []
+    assert checks.repeated_phrases("The smell of ozone first appeared here.", "") == []  # a first use is never flagged
+
+
+def test_rewrite_pass_asks_for_fresh_details_when_an_image_keeps_returning():
+    from ragscript.refine import section_issues
+    cfg = config.load()
+    earlier = "The smell of ozone hung in the hall. The smell of ozone grew. The smell of ozone stayed."
+    issues = section_issues("I caught the smell of ozone once more.", earlier, cfg, [], style=True)
+    assert any("images already used" in x and "smell ozone" in x for x in issues)
+    assert not section_issues("I caught the smell of ozone once more.", earlier, cfg, [])  # drafts are not judged on it
+
+
+def test_interrupted_ingest_keeps_the_progress_of_the_files_already_done(tmp_path, monkeypatch):
+    import json as _json
+    import pytest
+    from ragscript.store import Store
+    cfg = config.load()
+    cfg["paths"].update(data_dir=str(tmp_path / "data"), chroma_dir=str(tmp_path / "db"), state_file=str(tmp_path / "db/s.json"))
+    (tmp_path / "data/horror").mkdir(parents=True)
+    fm = """---
+subgenre: s
+tone: t
+pov: first
+---
+"""
+    for name in ("a", "b"):
+        (tmp_path / "data/horror" / f"{name}.txt").write_text(fm + f"The {name} tide came in over the rocks. " * 80, encoding="utf-8")
+    st = Store(cfg)
+    calls = []
+
+    def embed(texts):
+        calls.append(1)
+        if len(calls) > 2:  # each file embeds twice (scripts, hooks): the second file is "killed" half way
+            raise KeyboardInterrupt
+        return [[1.0, 0.0] for _ in texts]
+
+    monkeypatch.setattr(st, "embed", embed)
+    with pytest.raises(KeyboardInterrupt):
+        st.ingest(lambda text: "{}")
+    state = _json.loads((tmp_path / "db/s.json").read_text())
+    assert list(state["files"]) == ["horror/a.txt"]  # the finished file is recorded, so the next run skips it
+
+
+def test_dialogue_in_another_tense_is_not_counted_as_a_tense_switch():
+    narration = "I walked in. I saw the door. I knew it was locked. "
+    speech = 'He said, "I see it, I hear it, I feel it." '
+    assert not checks.mixed_tense(narration + speech)
+    assert checks.mixed_tense(narration + "I see it. I hear it. I feel it.")
+
+
+def test_polish_and_fit_outputs_lose_invented_bracket_notes():
+    from ragscript import genre
+    from ragscript.refine import Refiner
+    cfg = config.load()
+    g = genre.load(cfg, "horror")
+    sections = [({"beat": "hook", "words": 20}, "I opened the door and listened for a long quiet moment in the hall.")]
+    out = Refiner(lambda stage, vars, **kw: "I opened the door [recurring] and listened for a long quiet moment in the hall.",
+                  cfg, []).polish(sections, "Eli", g, [])
+    assert "[recurring]" not in out[0]
+
+
+def test_a_value_that_looks_like_a_placeholder_is_inserted_as_it_is(tmp_path):
+    cfg = config.load()
+    p = Pipeline(cfg, FakeRetriever(), FakeLLM(), banned=["bad phrase"])
+    out = p._tpl("revise", text="the lore says <<banned>> here", narrator="n", genre_rules="g", problems="p", target_words=5)
+    assert out.count("<<banned>>") == 1 and "bad phrase" in out  # the template's own placeholder was filled

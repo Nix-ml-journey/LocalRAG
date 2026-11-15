@@ -45,9 +45,9 @@ class Pipeline:
         t = (config.path(self.cfg, "prompts_dir") / "stages" / f"{name}.md").read_text(encoding="utf-8")
         shared = {"banned": "\n".join(self.banned), "sentence_range": config.sentence_range(self.cfg),
                   "max_pause": self.cfg["style"]["max_pause_per_section"]}
-        for k, v in {**shared, **kw}.items():
-            t = t.replace(f"<<{k}>>", str(v))
-        return t
+        values = {**shared, **kw}
+        # one pass over the template: a value that itself contains "<<name>>" (lore, a brief) is inserted as it is
+        return re.sub(r"<<(\w+)>>", lambda m: str(values.get(m.group(1), m.group(0))), t)
 
     def _ask(self, stage, tpl_vars, **chat):
         """One model call: the `stage` template filled with `tpl_vars`. The stage name travels with the call."""
@@ -148,22 +148,22 @@ class Pipeline:
                     x["words"] = max(30, round(x["orig"] * min(1.8, max(0.5, left))))
             k = self._k()  # re-read each beat: an OOM retry may have halved num_ctx
             q = f"{b.get('title','')} {b.get('summary','')}"
-            style = self.ret.search("scripts", q, genre, beat=b["beat"], k=k) or self.ret.search("scripts", q, genre, k=k)
+            examples = self.ret.search("scripts", q, genre, beat=b["beat"], k=k) or self.ret.search("scripts", q, genre, k=k)
             if b["beat"] == "outro":  # use the endings library for the last beat
-                style += self.ret.search("hooks", q, genre, beat="ending", k=k)
+                examples += self.ret.search("hooks", q, genre, beat="ending", k=k)
             lore = self.ret.search("lore", f"{brief} {q}", genre, k=k)
             beat_txt = f"{b['beat']}: {b.get('title','')} - {b.get('summary','')}"
             if b["beat"] == "hook":
                 beat_txt += f"\nOpen with this chosen hook, polished and extended:\n{hook}"
-            ledger.add_style(style)  # so the >80% overlap check also covers style examples
+            ledger.add_style(examples)  # so the >80% overlap check also covers style examples
             tail = ""
             if sections:
                 tail = ("\n\nEnd of the text written so far. Do NOT repeat its sentences, refrains or images; "
                         "advance the story with new events:\n" + " ".join(sections[-1][1].split()[-120:]))
             prompt = self._tpl(
-                "section", genre_rules=g.rules, narrator=narrator, outline=outline_txt, beat=beat_txt,
+                "section", brief=brief, genre_rules=g.rules, narrator=narrator, outline=outline_txt, beat=beat_txt,
                 beat_words=b["words"], summary=summary + tail,
-                style_examples="\n\n".join(f"- {c['text']}" for c in style) or "(none)",
+                style_examples="\n\n".join(f"- {c['text']}" for c in examples) or "(none)",
                 lore=cite(lore) or "(none)")
             earlier = "\n\n".join(t for _, t in sections)
             text = self._write_section(prompt, b, earlier, g.grounded)

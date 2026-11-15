@@ -50,6 +50,13 @@ def section_issues(text, earlier, cfg, banned, *, budget=None, grounded=False, s
             p.append(f"it has {pauses} [PAUSE] cues; keep {limit} at most, right before a reveal")
         if checks.mixed_tense(text):
             p.append("it switches between past and present tense; rewrite everything in the past tense")
+        if lines := checks.repeated_lines(text, earlier):
+            p.append("it reuses lines already written (" + " | ".join(lines[:3]) + "); write fresh lines instead")
+        if images := checks.repeated_phrases(text, earlier, ck["phrase_repeat"]):
+            p.append("it brings back images already used earlier in the script (" + ", ".join(
+                f"{ph} x{n}" for ph, n in images[:3]) + "); replace them with fresh details")
+        if crowded := checks.crowded_words(text, ck["word_repeat"]):
+            p.append("it leans on the words " + ", ".join(f"{w} (x{n})" for w, n in crowded[:3]) + "; vary the wording")
     return p
 
 
@@ -76,8 +83,9 @@ class Refiner:
         def polish_one(bt):
             b, t = bt
             ref = min(checks.spoken_count(t), b["words"])  # trim an oversize draft to its budget, never pad a short one
-            p = self.ask("polish", dict(text=t, narrator=narrator, genre_rules=g.rules, target_words=ref),
-                         temperature=0.5, max_tokens=int(checks.spoken_count(t) * 2.2))
+            p = clean_draft(whole_sentences(self.ask(
+                "polish", dict(text=t, narrator=narrator, genre_rules=g.rules, target_words=ref),
+                temperature=0.5, max_tokens=int(checks.spoken_count(t) * 2.2))))
             ok = (ln["polish_min"] * ref <= checks.spoken_count(p) <= ln["polish_max"] * ref
                   and checks.repeated_rate(p, rn) <= checks.repeated_rate(t, rn) + 0.05)
             return (p if ok else t), ok
@@ -99,28 +107,31 @@ class Refiner:
         return parts
 
     def revise_weakest(self, parts, narrator, g, notes):
-        """One rewrite for the section with the most style issues. Kept only if it has fewer issues and stays near
-        its length, so this step can only improve the script."""
-        earlier, issues = "", []
-        for p in parts:
-            issues.append(section_issues(p, earlier, self.cfg, self.banned, style=True))
-            earlier += "\n\n" + p
-        i = max(range(len(parts)), key=lambda j: len(issues[j]))
-        if not issues[i]:
-            return parts
-        before = checks.spoken_count(parts[i])
-        new = self.ask("revise", dict(text=parts[i], narrator=narrator, genre_rules=g.rules,
-                                      problems="\n".join("- " + x for x in issues[i]), target_words=before),
-                       temperature=0.5, max_tokens=int(before * 2.2))
-        new = clean_draft(whole_sentences(new))
-        ln = self.cfg["length"]
-        earlier = "\n\n".join(parts[:i])
-        ok = (ln["polish_min"] * before <= checks.spoken_count(new) <= ln["polish_max"] * before
-              and len(section_issues(new, earlier, self.cfg, self.banned, style=True)) < len(issues[i]))
-        if ok:
-            notes.append(f"Revised section {i + 1} to fix: " + "; ".join(x.split(";")[0] for x in issues[i]) + ".")
-            return parts[:i] + [new] + parts[i + 1:]
-        notes.append(f"Revision of section {i + 1} rejected; polished text kept.")
+        """Rewrite the sections with the most style issues, worst first, at most `checks.revise_sections` of them.
+        A rewrite is kept only if it has fewer issues and stays near its length, so this step can only improve the
+        script; each section is judged against the text before it as it is now."""
+        ln, tried = self.cfg["length"], set()
+        for _ in range(self.cfg["checks"]["revise_sections"]):
+            earlier, issues = "", []
+            for p in parts:
+                issues.append(section_issues(p, earlier, self.cfg, self.banned, style=True))
+                earlier += "\n\n" + p
+            i = max((j for j in range(len(parts)) if j not in tried), key=lambda j: len(issues[j]), default=None)
+            if i is None or not issues[i]:
+                break
+            tried.add(i)
+            before = checks.spoken_count(parts[i])
+            new = self.ask("revise", dict(text=parts[i], narrator=narrator, genre_rules=g.rules,
+                                          problems="\n".join("- " + x for x in issues[i]), target_words=before),
+                           temperature=0.5, max_tokens=int(before * 2.2))
+            new = clean_draft(whole_sentences(new))
+            earlier = "\n\n".join(parts[:i])
+            if (ln["polish_min"] * before <= checks.spoken_count(new) <= ln["polish_max"] * before
+                    and len(section_issues(new, earlier, self.cfg, self.banned, style=True)) < len(issues[i])):
+                notes.append(f"Revised section {i + 1} to fix: " + "; ".join(x.split(";")[0] for x in issues[i]) + ".")
+                parts = parts[:i] + [new] + parts[i + 1:]
+            else:
+                notes.append(f"Revision of section {i + 1} rejected; polished text kept.")
         return parts
 
     def fit_length(self, parts, budgets, total, narrator, g, notes, max_calls=7):
@@ -140,9 +151,9 @@ class Refiner:
                 break
             tried.add(i)
             target = round(min(1.8, max(0.4, 1 + (total - n) / max(words[i], 1))) * words[i])
-            new = self.ask("fit", dict(text=parts[i], narrator=narrator, genre_rules=g.rules,
-                                       current_words=words[i], target_words=target),
-                           temperature=0.5, max_tokens=int(max(words[i], target) * 2.2))
+            new = clean_draft(whole_sentences(self.ask(
+                "fit", dict(text=parts[i], narrator=narrator, genre_rules=g.rules, current_words=words[i],
+                            target_words=target), temperature=0.5, max_tokens=int(max(words[i], target) * 2.2))))
             trial = parts[:i] + [new] + parts[i + 1:]
             joined, w = "\n\n".join(trial), checks.spoken_count(new)
             # compare words, not layout: dedupe joins a line break after a full stop into a space

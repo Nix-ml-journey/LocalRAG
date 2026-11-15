@@ -14,7 +14,7 @@ flowchart LR
     R[(Hybrid retrieval<br/>Chroma + BM25 + RRF<br/>style / lore / hooks)] --> W
     W --> P[Polish each beat]
     P --> D[Repeat guard]
-    D --> RV[Rewrite the weakest section]
+    D --> RV[Rewrite the weakest sections]
     RV --> F[Length fit to +/-10%]
     F --> V[Verify facts<br/>grounded genres]
     V --> M[Markdown: titles, thumbnails,<br/>script, chapters, tags, checks]
@@ -42,7 +42,7 @@ Measured on this machine (num_ctx 16384). Rows other than the fantasy row were m
 | Fantasy 5-min script, two runs on gemma4:12b (target 750) | 753 / 762 words, accuracy 99.6% / 98.4%, repeats 0.3% / 1.6%, sentences 14.8 / 14.9 words, 407-695 s each, peak VRAM 10.7 GB |
 | History 5-min script on gemma4:12b, after the Verify upgrade | 722 words (accuracy 96.3%), repeats 4.3%, sentences 14.4 words, 14 sentences marked `{{INVENTED}}`; an earlier history run on the same model gave 753 words, repeats 1.3% |
 | Sci-fi 5-min script on gemma4:12b, after the refine pass and tightened prompts | 759 words (accuracy 98.8%), repeats 1.6%, sentences 15.5 words, 1.4 `[PAUSE]` per minute, no tense switches, 2 repeated paragraphs removed |
-| Offline tests (no GPU, no Ollama) | 59 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
+| Offline tests (no GPU, no Ollama) | 68 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
 
 Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks claims the lore does not support, `[S1]` marks facts that do):
 > On December 4, 1872, the *Dei Gratia* spotted her sailing erratically in the Atlantic [S1]. No one answered their signals, and a boarding party found the ship completely deserted [S1].
@@ -60,7 +60,7 @@ Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks 
 - **The rolling summary is labelled "already told".** It was labelled "Summary" and the model retold it; relabelling cut repeated phrases from 8.8% to 2.2% in one run.
 - **Invented bracket notes are stripped.** Only `[PAUSE]`, `[SFX:]`, `[B-ROLL:]` and `[S#]` survive.
 - **gemma4:12b is the writing model.** In a same-brief test against the model it replaced it had better accuracy, fewer repeats and lower peak VRAM (10.7 GB), and more concrete prose, but it is 2-3x slower (407-695 s per 5-min script). Sentences run long at 14.8-14.9 words.
-- **Style flaws get one targeted rewrite.** After polish, the section with the most flaws (repeated phrases, more than one `[PAUSE]`, a past/present tense switch, banned phrases) is rewritten once, and the rewrite is kept only if it has fewer flaws. Every genre also gets shared rules (past tense throughout, a `[PAUSE]` limit per section), whose numbers come from `config.yaml` `style:`. The outline step tries thinking once and then retries with thinking off, because thinking could use the whole token budget and return no JSON.
+- **Style flaws get targeted rewrites.** After polish, the sections with the most flaws (repeated phrases, short lines reused from earlier sections, a sensory image (two content words such as smell + ozone) used a fourth time in the script (the narrator's recurring details are capped at 3 uses each in the outline prompt), a word used 3+ times in one section, more than one `[PAUSE]`, a past/present tense switch, banned phrases) are rewritten, worst first, at most `checks.revise_sections` (2) of them, and each rewrite is kept only if it has fewer flaws. The section prompt also carries the brief, so the story does not drift from its premise. Every genre also gets shared rules (past tense throughout, a `[PAUSE]` limit per section), whose numbers come from `config.yaml` `style:`. The outline step tries thinking once and then retries with thinking off, because thinking could use the whole token budget and return no JSON.
 - **One sentence splitter.** Two checks once split sentences differently, so "J. Habakuk" counted as two sentences and a mid-sentence `[S1]` tag cut a claim in half before Verify judged it. All checks now share `text.sentences()`.
 - **Models:** gemma4:12b (writing) and BAAI/bge-m3 (embeddings). Models are not included; each has its own licence.
 
