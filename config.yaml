@@ -56,6 +56,8 @@ checks:
   revise_sections: 2        # ... and rewrites at most this many sections, worst first
   dedupe_ngram: 4           # the repeat guard compares 4-grams of paragraphs and sentences
   dedupe_paragraph: 0.6     # ... drops a paragraph when more than this share of its n-grams was already written
+  dedupe_similar: 0.5       # ... or a paragraph that retells an earlier one in new words: this share of its content words are shared
+  dedupe_similar_min: 10    # ... (only paragraphs with this many content words are compared)
   dedupe_sentence: 0.7      # ... or a sentence (of dedupe_min_words+ words) over this share
   dedupe_min_words: 6
   polish_repeat_slack: 0.05 # a polished section is rejected if its repeated-phrase rate rose by more than this

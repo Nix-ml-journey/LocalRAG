@@ -68,12 +68,35 @@ def drop_repeat_sentences(text, earlier, n, thr, min_words):
     return "\n\n".join(out)
 
 
+def _content_set(text):
+    """The distinct content words (4+ letters, no function words) of a stretch of text."""
+    return {w for w in words(unmark(text)) if len(w) >= 4 and w not in _FUNC}
+
+
+def drop_similar(text, earlier, thr, min_content):
+    """Remove paragraphs that retell an earlier one in different words. The 4-gram guards miss a retelling that
+    rewords every phrase, but it still reuses the same content words: a paragraph is dropped when `thr` of the smaller
+    paragraph's content words occur in an earlier paragraph (of `earlier` or kept before it). Paragraphs with fewer
+    than `min_content` content words are never compared."""
+    seen = [s for s in (_content_set(p) for p in re.split(r"\n\s*\n", earlier)) if len(s) >= min_content]
+    kept = []
+    for para in re.split(r"\n\s*\n", text):
+        cs = _content_set(para)
+        if len(cs) >= min_content:
+            if any(len(cs & s) / min(len(cs), len(s)) >= thr for s in seen):
+                continue
+            seen.append(cs)
+        kept.append(para)
+    return "\n\n".join(kept)
+
+
 def dedupe(text, ck, earlier=""):
-    """The anti-repetition pass: repeated paragraphs, then repeated sentences, against `earlier` and the text itself.
-    Always call this instead of the two functions separately: each catches what the other misses."""
+    """The anti-repetition pass: repeated paragraphs, reworded retellings, then repeated sentences, against `earlier`
+    and the text itself. Always call this instead of the functions separately: each catches what the others miss."""
     n = ck["dedupe_ngram"]
-    return drop_repeat_sentences(drop_repeats(text, earlier, n, ck["dedupe_paragraph"]), earlier, n,
-                                 ck["dedupe_sentence"], ck["dedupe_min_words"])
+    text = drop_repeats(text, earlier, n, ck["dedupe_paragraph"])
+    text = drop_similar(text, earlier, ck["dedupe_similar"], ck["dedupe_similar_min"])
+    return drop_repeat_sentences(text, earlier, n, ck["dedupe_sentence"], ck["dedupe_min_words"])
 
 
 def avg_sentence_words(text) -> float:
@@ -121,24 +144,33 @@ _FUNC = _STOP | set("""that with from this they them were been have into over li
 does some only more each even also very much such back there here will""".split())
 
 
-def content_counts(text):
-    """Counter of the content words (5+ letters, no function words) in the text: the one counter behind both
-    crutch-word checks."""
-    return Counter(x for x in words(unmark(text)) if len(x) >= 5 and x not in _STOP)
+def _stem(w):
+    return w[:-1] if len(w) > 4 and w.endswith("s") else w
 
 
-def overused_words(text, ck, top=5):
+def topic_words(brief):
+    """The brief's own content words (stemmed): a story about monitors says "monitor" often, which is not a crutch."""
+    return {_stem(w) for w in words(brief) if len(w) >= 5 and w not in _STOP}
+
+
+def content_counts(text, skip=frozenset()):
+    """Counter of the content words (5+ letters, no function words, none of the `skip` topic words) in the text: the
+    one counter behind both crutch-word checks."""
+    return Counter(x for x in words(unmark(text)) if len(x) >= 5 and x not in _STOP and _stem(x) not in skip)
+
+
+def overused_words(text, ck, top=5, skip=frozenset()):
     """Content words that recur far more than natural prose does across a whole script: the crutch words a small
     model leans on ("heavy", "hum"). Returns [(word, count)], most frequent first."""
     total = max(1, len(words(text)))
-    found = [(k, v) for k, v in content_counts(text).most_common(top * 3)
+    found = [(k, v) for k, v in content_counts(text, skip).most_common(top * 3)
              if v >= ck["crowd_min"] and v / total >= ck["crowd_share"]]
     return found[:top]
 
 
-def crowded_words(text, limit):
+def crowded_words(text, limit, skip=frozenset()):
     """[(word, count)] for content words used `limit` or more times in one stretch of text (one section)."""
-    return [(w, n) for w, n in content_counts(text).most_common() if n >= limit]
+    return [(w, n) for w, n in content_counts(text, skip).most_common() if n >= limit]
 
 
 def _pairs(text):

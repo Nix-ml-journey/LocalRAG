@@ -32,7 +32,7 @@ class Report:
         return self.pause_cues / self.minutes
 
 
-def build(script, *, target_words, minutes, refs, cited_text, grounded, banned, cfg, notes) -> Report:
+def build(script, *, target_words, minutes, refs, cited_text, grounded, banned, cfg, notes, brief="") -> Report:
     """Measure `script`. refs: every source chunk text shown to the model; cited_text: {S number: chunk text};
     the two fact checks only run for grounded genres."""
     ck = cfg["checks"]
@@ -49,7 +49,7 @@ def build(script, *, target_words, minutes, refs, cited_text, grounded, banned, 
         unsupported_cites=grounding.unsupported_cites(script, cited_text) if grounded else [],
         uncited_facts=grounding.uncited_facts(script) if grounded else [],
         pause_cues=script.count("[PAUSE]"), minutes=minutes,
-        mixed_tense=checks.mixed_tense(script, ck), overused_words=checks.overused_words(script, ck),
+        mixed_tense=checks.mixed_tense(script, ck), overused_words=checks.overused_words(script, ck, skip=checks.topic_words(brief)),
         repeated_images=checks.crowded_phrases(script, ck["phrase_repeat"]), notes=notes)
     if r.mixed_tense:
         r.flags.append("**Tense switches between past and present in the narration (check before recording).**")

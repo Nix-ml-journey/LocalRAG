@@ -26,7 +26,8 @@ flowchart LR
   so it is not used.
 - **Grounded history:** for fact-based genres the model tags facts `[S#]` (the lore chunk they came from) and wraps
   anything it invents as `{{INVENTED: ...}}`. A Verify step re-checks every sentence that carries a `[S#]` tag, plus sentences naming something with no citation, against the lore (at most 40 checks).
-- **Guards:** repeated paragraphs and sentences are removed, the final length is steered to within 10% of the target,
+- **Rewrite pass:** after polish, the two sections with the most style issues (a line reused from an earlier section, a sensory image returning for a fourth time, a past/present tense switch, extra `[PAUSE]` cues) are rewritten once each, and a rewrite is kept only if it has fewer issues.
+- **Guards:** repeated paragraphs, paragraphs that retell an earlier one in new words, and repeated sentences are removed, the final length is steered to within 10% of the target,
   and passages with over 80% 5-gram overlap with a source are flagged.
 
 ## Results
@@ -42,7 +43,7 @@ Measured on this machine (num_ctx 16384). Rows other than the fantasy row were m
 | Fantasy 5-min script, two runs on gemma4:12b (target 750) | 753 / 762 words, accuracy 99.6% / 98.4%, repeats 0.3% / 1.6%, sentences 14.8 / 14.9 words, 407-695 s each, peak VRAM 10.7 GB |
 | History 5-min script on gemma4:12b, after the Verify upgrade | 722 words (accuracy 96.3%), repeats 4.3%, sentences 14.4 words, 14 sentences marked `{{INVENTED}}`; an earlier history run on the same model gave 753 words, repeats 1.3% |
 | Sci-fi 5-min script on gemma4:12b, after the refine pass and tightened prompts | 759 words (accuracy 98.8%), repeats 1.6%, sentences 15.5 words, 1.4 `[PAUSE]` per minute, no tense switches, 2 repeated paragraphs removed |
-| Offline tests (no GPU, no Ollama) | 73 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
+| Offline tests (no GPU, no Ollama) | 75 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
 
 Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks claims the lore does not support, `[S1]` marks facts that do):
 > On December 4, 1872, the *Dei Gratia* spotted her sailing erratically in the Atlantic [S1]. No one answered their signals, and a boarding party found the ship completely deserted [S1].
@@ -60,7 +61,12 @@ Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks 
 - **The rolling summary is labelled "already told".** It was labelled "Summary" and the model retold it; relabelling cut repeated phrases from 8.8% to 2.2% in one run.
 - **Invented bracket notes are stripped.** Only `[PAUSE]`, `[SFX:]`, `[B-ROLL:]` and `[S#]` survive.
 - **gemma4:12b is the writing model.** In a same-brief test against the model it replaced it had better accuracy, fewer repeats and lower peak VRAM (10.7 GB), and more concrete prose, but it is 2-3x slower (407-695 s per 5-min script). Sentences run long at 14.8-14.9 words.
-- **Style flaws get targeted rewrites.** After polish, the sections with the most flaws (repeated phrases, short lines reused from earlier sections, a sensory image (two content words such as smell + ozone) used a fourth time in the script (the narrator's recurring details are capped at 3 uses each in the outline prompt), a word used 3+ times in one section, more than one `[PAUSE]`, a past/present tense switch, banned phrases) are rewritten, worst first, at most `checks.revise_sections` (2) of them, and each rewrite is kept only if it has fewer flaws. The section prompt also carries the brief, so the story does not drift from its premise. Every genre also gets shared rules (past tense throughout, a `[PAUSE]` limit per section), whose numbers come from `config.yaml` `style:`. The outline step tries thinking once and then retries with thinking off, because thinking could use the whole token budget and return no JSON.
+- **Style flaws get targeted rewrites.** After polish, the sections with the most flaws are rewritten, worst first, at most `checks.revise_sections` (2) of them, and each rewrite is kept only if it has fewer flaws. The flaws: repeated phrases, short lines reused from earlier sections, a sensory image (two content words such as smell + ozone) used a fourth time in the script, a word used 3+ times in one section, too many `[PAUSE]` cues, a past/present tense switch, banned phrases.
+- **The narrator's recurring details are capped.** The outline prompt used to say the three fixed details "must recur"; the model obeyed and the same smell or object came back in every section. They now recur at most 3 times in different beats, and the repeated-image check only starts at the fourth use.
+- **Shared narration rules and the brief in every section.** Every genre gets the same rules (past tense throughout, a `[PAUSE]` limit per section), with the numbers taken from `config.yaml` `style:`. The section prompt carries the brief so a story does not drift from its premise.
+- **The outline step tries thinking once, then retries without it.** Thinking could use the whole token budget and return no JSON.
+- **A reworded retelling is caught by content words, not phrases.** The 4-gram guards missed a paragraph that said the same thing in new words (repeat rate 6.7% in one horror run, with the opening paragraph told twice). `dedupe` now also drops a paragraph when at least half of its content words occur in one earlier paragraph. Calibrated on saved scripts: the two real retellings scored 0.55 and 0.75, ordinary pairs 0.37 or lower, so the threshold is 0.5 (`checks.dedupe_similar`); on those scripts it dropped exactly those two paragraphs (repeat rates 6.7% to 4.0% and 4.9% to 0.8%).
+- **Words the brief uses are not crutch words.** A story about monitors says "monitor" nine times; the crowded-word checks now ignore the brief's own content words.
 - **One sentence splitter.** Two checks once split sentences differently, so "J. Habakuk" counted as two sentences and a mid-sentence `[S1]` tag cut a claim in half before Verify judged it. All checks now share `text.sentences()`.
 - **Models:** gemma4:12b (writing) and BAAI/bge-m3 (embeddings). Models are not included; each has its own licence.
 
@@ -78,7 +84,9 @@ Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks 
 - Single user, single machine; no concurrency design beyond the polish step.
 - Retrieval is judged on 17 briefs; script quality on the 3-brief check plus reading, not a user study.
 - Average sentence length is now about 13-15 words (target 10-15); gemma4 runs at the long end. Read aloud before recording.
-- The Verify step is strict: it can mark a true paraphrase as `INVENTED`, and the model still reuses atmosphere lines (a repeated-phrase rate of 4.3% showed up in one history run). The Checks section now lists crutch words (content words used far more often than natural prose), tense switches and `[PAUSE]` density, but only reports them.
+- The Verify step is strict: it can mark a true paraphrase as `INVENTED`.
+- Repetition is reduced, not solved. The 12B model still brings back sensory images (one horror test repeated "smell of ozone" about five times even with the checks) and repeated-phrase rates stay around 4-5% in horror runs. The Checks section lists crutch words, returning images, tense switches and `[PAUSE]` density; only the two worst sections get an automatic rewrite.
+- Retrieval ranks shift as the corpus grows: adding 29 horror stories moved top-3 from 0.96 to 0.91 on the eval briefs.
 - History facts come from a small set of lore notes (10 topics). Fact-check every `{{INVENTED}}` mark and the
   Checks section before publishing.
 - The books and scripts used as style data are **not** in this repository (see below).
@@ -101,7 +109,7 @@ bge-m3 (~2 GB) downloads on first ingest; after that everything runs offline.
 
 ## Use
 ```bash
-python cli.py ingest                                   # incremental: only new/changed files are re-indexed
+python cli.py ingest                                   # incremental: only new/changed files are re-indexed; an interrupted run resumes where it stopped
 python cli.py hooks "A lighthouse keeper finds extra footprints" --genre horror
 python cli.py write "The lost colony of Roanoke" --genre history --minutes 10 --hook 2
 python cli.py write "A tech finds the ship AI is lying" --genre sci-fi --style "wry, practical details" --minutes 5

@@ -378,3 +378,28 @@ def test_prompt_filling_uses_config_values_and_leaves_unknown_placeholders():
     cfg = config.load()
     out = prompts.fill("range <<sentence_range>>, pause <<max_pause>>, <<unknown>>, <<name>>", cfg, (), name="<<banned>>")
     assert out == "range 10-15, pause 1, <<unknown>>, <<banned>>"
+
+
+def test_a_paragraph_retold_in_new_words_is_dropped_but_a_continuation_is_kept():
+    first = ("I checked every monitor in the booth to see if the lag was a local glitch. Each screen showed a different "
+             "wing of the warehouse, but the delay remained consistent across every feed. The steady hum of the HVAC "
+             "filled the room while I waited for a flicker.")
+    reworded = ("I scanned each monitor row to see if the lag affected just one specific camera feed. Every display "
+                "showed a different wing of the warehouse, yet the timing stayed consistent across all feeds. The "
+                "steady hum of the HVAC filled the booth while I waited for a glitch.")
+    new_scene = ("I stepped into the corridor while the sharp chemical sting of floor wax filled my nose. My hands "
+                 "gripped the heavy keys at my belt as I walked toward the first door.")
+    assert checks.drop_similar(first + "\n\n" + reworded, "", 0.5, 10) == first  # the retelling goes
+    assert checks.drop_similar(first + "\n\n" + new_scene, "", 0.5, 10) == first + "\n\n" + new_scene
+    assert checks.drop_similar(reworded, first, 0.5, 10) == ""  # also against text from earlier sections
+    assert checks.drop_similar("Too short.", "Too short.", 0.5, 10) == "Too short."  # tiny paragraphs are not compared
+    assert checks.dedupe(first + "\n\n" + reworded, CK) == first  # and dedupe applies it
+
+
+def test_words_the_brief_itself_uses_are_not_crutch_words():
+    brief = "A night-shift security guard keeps seeing himself on the monitors"
+    skip = checks.topic_words(brief)
+    assert "monitor" in skip and "guard" in skip
+    text = "The monitor flickered. A monitor hissed. I stared at the monitor, then the heavy door, the heavy latch, the heavy lock."
+    assert checks.crowded_words(text, 3) == [("monitor", 3), ("heavy", 3)]
+    assert checks.crowded_words(text, 3, skip) == [("heavy", 3)]  # the topic noun is ignored, the real crutch is not

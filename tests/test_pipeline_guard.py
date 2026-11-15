@@ -27,6 +27,7 @@ def test_repeated_scenes_do_not_survive(tmp_path):
 def test_guard_has_teeth(tmp_path, monkeypatch):
     """With the dedupe switched off the same fake model must produce visible repeats; otherwise the guard proves nothing."""
     monkeypatch.setattr(checks, "drop_repeats", lambda text, *a, **k: text)
+    monkeypatch.setattr(checks, "drop_similar", lambda text, *a, **k: text)
     monkeypatch.setattr(checks, "drop_repeat_sentences", lambda text, *a, **k: text)
     script = run(tmp_path)
     assert script.lower().count("pallet out of place") > 1

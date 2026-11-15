@@ -74,7 +74,7 @@ def draft_issues(text, earlier, cfg, banned, budget, grounded=False):
     return out + _banned_issues(text, banned)
 
 
-def final_issues(text, earlier, cfg, banned):
+def final_issues(text, earlier, cfg, banned, skip=frozenset()):
     """Reasons a finished section is worth rewriting (empty list = fine): the draft checks on repeats and banned
     phrases, plus cue, tense, reused-line, returning-image and crowded-word problems."""
     ck, out = cfg["checks"], _repeat_issues(text, earlier, cfg["checks"]) + _banned_issues(text, banned)
@@ -89,7 +89,7 @@ def final_issues(text, earlier, cfg, banned):
     if images := checks.repeated_phrases(text, earlier, ck["phrase_repeat"]):
         shown = ", ".join(f"{ph} x{n}" for ph, n in images[:3])
         out.append(Issue("images", f"it brings back images already used earlier in the script ({shown}); replace them with fresh details", shown))
-    if crowded := checks.crowded_words(text, ck["word_repeat"]):
+    if crowded := checks.crowded_words(text, ck["word_repeat"], skip):
         shown = ", ".join(f"{w} x{n}" for w, n in crowded[:3])
         out.append(Issue("crowded", f"it leans on the words {shown}; vary the wording", shown))
     return out
@@ -151,11 +151,11 @@ class Refiner:
         """Rewrite the sections with the most issues, worst first, at most `checks.revise_sections` of them. Each is
         judged against the text before it as it is now; a rewrite is kept only if it has fewer issues and stays near
         its length."""
-        ln, tried = self.cfg["length"], set()
+        ln, tried, skip = self.cfg["length"], set(), checks.topic_words(story.brief)
         for _ in range(self.cfg["checks"]["revise_sections"]):
             earlier, issues = "", []
             for p in parts:
-                issues.append(final_issues(p, earlier, self.cfg, self.banned))
+                issues.append(final_issues(p, earlier, self.cfg, self.banned, skip))
                 earlier += "\n\n" + p
             i = max((j for j in range(len(parts)) if j not in tried), key=lambda j: len(issues[j]), default=None)
             if i is None or not issues[i]:
@@ -168,7 +168,7 @@ class Refiner:
                                                 problems="\n".join("- " + x.message for x in issues[i]), target_words=before),
                                  temperature=0.5, max_tokens=int(before * 2.2)),
                 lambda n: (ln["polish_min"] * before <= checks.spoken_count(n) <= ln["polish_max"] * before
-                           and len(final_issues(n, earlier, self.cfg, self.banned)) < len(issues[i])))
+                           and len(final_issues(n, earlier, self.cfg, self.banned, skip)) < len(issues[i])))
             if kept:
                 story.notes.append(f"Revised section {i + 1} to fix: {_note(issues[i])}.")
                 parts = parts[:i] + [new] + parts[i + 1:]
