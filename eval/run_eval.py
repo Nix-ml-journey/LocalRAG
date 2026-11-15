@@ -12,23 +12,33 @@ import yaml
 from ragscript import config
 from ragscript.pipeline import Pipeline
 
+COLLECTIONS = ("lore", "scripts", "hooks")
+
 
 def load_briefs():
     return yaml.safe_load((config.ROOT / "eval" / "briefs.yaml").read_text(encoding="utf-8"))
 
 
+def ranks(pl, brief, k=10):
+    """{expected source: its best rank across lore/scripts/hooks, or k+1 when it is not in the top k}. The one place
+    that decides whether retrieval found what a brief expects; hit rate and top-k are both derived from it."""
+    best = {w: k + 1 for w in brief.get("expect_sources", [])}
+    for coll in COLLECTIONS:
+        for i, c in enumerate(pl.ret.search(coll, brief["brief"], brief["genre"], k=k), 1):
+            for w in best:
+                if w in c["meta"]["source"]:
+                    best[w] = min(best[w], i)
+    return best
+
+
+def top_k(all_ranks):
+    """Share of expected sources ranked within the top 1 / 3 / 10, over every brief's ranks()."""
+    flat = [r for rk in all_ranks for r in rk.values()]
+    return {f"top{x}": sum(r <= x for r in flat) / len(flat) for x in (1, 3, 10)}
+
+
 def rank_metrics(pl, briefs, k=10):
-    """Share of expected sources whose best rank (across lore/scripts/hooks) is within the top 1 / 3 / 10."""
-    ranks = []
-    for b in briefs:
-        best = {}
-        for coll in ("lore", "scripts", "hooks"):
-            for i, c in enumerate(pl.ret.search(coll, b["brief"], b["genre"], k=k), 1):
-                for w in b.get("expect_sources", []):
-                    if w in c["meta"]["source"]:
-                        best[w] = min(best.get(w, k + 1), i)
-        ranks += [best.get(w, k + 1) for w in b.get("expect_sources", [])]
-    return {f"top{x}": sum(r <= x for r in ranks) / len(ranks) for x in (1, 3, 10)}
+    return top_k([ranks(pl, b, k) for b in briefs])
 
 
 def compare_rerank(model=None):
@@ -52,15 +62,15 @@ def run(retrieval_only=False, ids=None, minutes=None, label=None):
     logging.basicConfig(level=logging.WARNING)
     briefs = [b for b in load_briefs() if not ids or b["id"] in ids]
     pl = Pipeline.from_config()
+    final_k = pl.cfg["retrieval"]["final_k"]
     dest = config.ROOT / "output" / label if label else None
     if dest:
         dest.mkdir(parents=True, exist_ok=True)
-    hits, reports = [], []
+    hits, all_ranks, reports = [], [], []
     for b in briefs:
-        got = {c["meta"]["source"] for coll in ("lore", "scripts", "hooks")
-               for c in pl.ret.search(coll, b["brief"], b["genre"])}
-        want = b.get("expect_sources", [])
-        hit = all(any(w in g for g in got) for w in want) if want else True
+        rk = ranks(pl, b)
+        all_ranks.append(rk)
+        hit = all(r <= final_k for r in rk.values())  # found among the chunks a script would actually be given
         hits.append(hit)
         line = f"{b['id']:<14} retrieval={'HIT ' if hit else 'MISS'}"
         if not retrieval_only:
@@ -71,15 +81,15 @@ def run(retrieval_only=False, ids=None, minutes=None, label=None):
             if dest:
                 shutil.copy(r["path"], dest / r["path"].name)
             line += (f" words={s.words}/{s.target_words} rep={s.repeated_phrase_rate:.1%}"
-                     f" pauses/min={s.pause_cues / s.minutes:.1f} tense={'MIXED' if s.mixed_tense else 'ok'}"
+                     f" pauses/min={s.pauses_per_minute:.1f} tense={'MIXED' if s.mixed_tense else 'ok'}"
                      f" sent={s.avg_sentence_words}")
         print(line, flush=True)
     print(f"\nRetrieval hit rate: {sum(hits)}/{len(hits)}")
-    print("Expected sources by rank: " + "  ".join(f"{k}={v:.2f}" for k, v in rank_metrics(pl, briefs).items()))
+    print("Expected sources by rank: " + "  ".join(f"{k}={v:.2f}" for k, v in top_k(all_ranks).items()))
     if reports:
         print(f"Word-count accuracy (mean): {statistics.mean(s.word_accuracy for s in reports):.1%}")
         print(f"Repeated-phrase rate (mean): {statistics.mean(s.repeated_phrase_rate for s in reports):.1%}")
-        print(f"[PAUSE] cues per minute (mean): {statistics.mean(s.pause_cues / s.minutes for s in reports):.1f}   "
+        print(f"[PAUSE] cues per minute (mean): {statistics.mean(s.pauses_per_minute for s in reports):.1f}   "
               f"scripts with mixed tense: {sum(s.mixed_tense for s in reports)}/{len(reports)}   "
               f"sentence length (mean): {statistics.mean(s.avg_sentence_words for s in reports):.1f} words")
         if dest:

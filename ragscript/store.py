@@ -1,15 +1,12 @@
-"""ChromaDB (persistent) + in-memory BM25, with incremental ingestion by file hash."""
-import hashlib
-import json
-import logging
+"""The search index: ChromaDB (persistent) for dense vectors and an in-memory BM25 index built from it.
+Filling it from files is ingest.py's job; this module only stores, removes and finds chunks."""
 import re
 
 import chromadb
 from rank_bm25 import BM25Okapi
 
-from . import chunking, config, loaders, metadata, vram
+from . import config, vram
 
-log = logging.getLogger("ragscript")
 COLLECTIONS = ("scripts", "lore", "hooks")
 _embedder = None
 
@@ -39,6 +36,31 @@ class Store:
     def embed(self, texts):
         return embedder(self.cfg).encode(texts, normalize_embeddings=True, batch_size=8).tolist()
 
+    def counts(self):
+        return {n: c.count() for n, c in self.cols.items()}
+
+    def sources(self):
+        """Every source file that has at least one chunk in any collection."""
+        return {m["source"] for c in self.cols.values() for m in c.get(include=["metadatas"])["metadatas"]}
+
+    # ---- writing -------------------------------------------------------
+    def add(self, name, rel, items, meta):
+        """Add the chunks of one source file to collection `name`. items: [(beat, text)]."""
+        if not items:
+            return
+        texts = [t for _, t in items]
+        metas = [{**meta, "beat": b, "words": len(t.split())} for b, t in items]
+        ids = [f"{name}:{rel}:{i}" for i in range(len(items))]
+        self.cols[name].add(ids=ids, documents=texts, embeddings=self.embed(texts), metadatas=metas)
+        self._bm25.clear()  # the lexical index is rebuilt from Chroma on the next search
+
+    def remove(self, rel):
+        """Remove every chunk of one source file from all collections."""
+        for c in self.cols.values():
+            c.delete(where={"source": rel})
+        self._bm25.clear()
+
+    # ---- searching -----------------------------------------------------
     def dense(self, col, query, n, where=None):
         """Nearest chunks of one Chroma collection: [{id, text, meta, distance}]. The one place a query is embedded
         and run, shared by the retriever and the HTTP service."""
@@ -60,8 +82,7 @@ class Store:
         return meta.get("genre") in (genre, "any") and (not beat or meta.get("beat") == beat)
 
     def lexical(self, name, query, n, genre, beat=None):
-        """BM25 matches of one collection for the same filter as `where`: [{id, text, meta}], best first. The index
-        is built lazily from Chroma and dropped after ingest."""
+        """BM25 matches of one collection for the same filter as `where`: [{id, text, meta}], best first."""
         if name not in self._bm25:
             d = self.cols[name].get()
             bm = BM25Okapi([tok(t) for t in d["documents"]]) if d["documents"] else None
@@ -73,86 +94,3 @@ class Store:
         top = sorted((j for j in range(len(ids)) if scores[j] > 0 and self.matches(metas[j], genre, beat)),
                      key=lambda j: -scores[j])[:n]
         return [{"id": ids[j], "text": texts[j], "meta": metas[j]} for j in top]
-
-    def _remove(self, rel):
-        for c in self.cols.values():
-            c.delete(where={"source": rel})
-
-    def _add(self, name, rel, items, meta):
-        """items: [(beat, text)]"""
-        if not items:
-            return
-        texts = [t for _, t in items]
-        metas = [{**meta, "beat": b, "words": len(t.split())} for b, t in items]
-        ids = [f"{name}:{rel}:{i}" for i in range(len(items))]
-        self.cols[name].add(ids=ids, documents=texts, embeddings=self.embed(texts), metadatas=metas)
-
-    def ingest(self, llm_tag_fn):
-        """Incrementally (re)index data_dir. llm_tag_fn(text)->JSON str for untagged files."""
-        sf = config.path(self.cfg, "state_file")
-        state = json.loads(sf.read_text()) if sf.exists() else {}
-        state.setdefault("files", {})
-        state.setdefault("tags", {})
-        seen = set()
-        for f, rel, h in self._files(config.path(self.cfg, "data_dir"), seen):
-            if state["files"].get(rel) == h:
-                continue
-            log.info("ingesting %s", rel)
-            self._remove(rel)
-            if self._index_file(f, rel, h, state, llm_tag_fn):  # an untagged file stays "changed": next ingest retries
-                state["files"][rel] = h
-                self._save(sf, state)  # per file: an interrupted ingest resumes here instead of redoing everything
-        self._prune(seen, state)
-        self._save(sf, state)
-        self._bm25.clear()
-        vram.log_stage("ingest done")
-        return {n: c.count() for n, c in self.cols.items()}
-
-    @staticmethod
-    def _save(sf, state):
-        """Write the ingest state through a temp file, so a kill during the write cannot leave broken JSON."""
-        sf.parent.mkdir(parents=True, exist_ok=True)
-        tmp = sf.with_suffix(".tmp")
-        tmp.write_text(json.dumps(state, indent=1))
-        tmp.replace(sf)
-
-    @staticmethod
-    def _files(data, seen):
-        """(path, relative name, content hash) of every supported file; their names are added to `seen`."""
-        for f in sorted(data.rglob("*")):
-            if f.is_file() and f.suffix.lower() in loaders.SUPPORTED:
-                rel = f.relative_to(data).as_posix()
-                seen.add(rel)
-                yield f, rel, hashlib.sha256(f.read_bytes()).hexdigest()
-
-    def _index_file(self, f, rel, h, state, llm_tag_fn) -> bool:
-        """Chunk and add one file to its collection. False when the LLM tagger failed for it."""
-        if rel.startswith("hooks/"):
-            self._ingest_hooks(rel, loaders.clean(loaders.read_raw(f)))
-            return True
-        fm, text = loaders.load(f)
-        meta, tagged = metadata.file_meta(rel, fm, text, h, state, llm_tag_fn)
-        items = chunking.chunk(text, self.cfg)
-        kind = metadata.kind_of(rel, fm)
-        self._add(kind, rel, items, meta)
-        if kind == "scripts" and items:
-            # auto-fill the hooks library from each script's opening and closing beats
-            self._add("hooks", rel, [("hook", items[0][1]), ("ending", items[-1][1])], meta)
-        return tagged
-
-    def _prune(self, seen, state):
-        """Remove deleted files from the index; also files indexed but never recorded (tagger was down)."""
-        indexed = {m["source"] for c in self.cols.values() for m in c.get(include=["metadatas"])["metadatas"]}
-        for rel in (set(state["files"]) | indexed) - seen:
-            log.info("removing deleted %s", rel)
-            self._remove(rel)
-            state["files"].pop(rel, None)
-
-    def _ingest_hooks(self, rel, text):
-        """Hand-written library: blocks separated by '---', first line 'TYPE: hook|ending'."""
-        items = []
-        for block in re.split(r"\n\s*---\s*\n", text):
-            m = re.match(r"\s*TYPE:\s*(hook|ending)\s*\n(.+)", block, re.S | re.I)
-            if m:
-                items.append((m.group(1).lower(), m.group(2).strip()))
-        self._add("hooks", rel, items, {"genre": "any", "source": rel})

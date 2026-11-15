@@ -1,17 +1,14 @@
-"""Offline guard for the final length control (Pipeline._fit_length): scripts land near the target, and the
-length fix can never re-introduce repeated text. Uses the same stubbed pipeline as test_pipeline_guard.py."""
+"""Offline guard for the final length control (Refiner.fit_length): scripts land near the target, and the length fix can
+never re-introduce repeated text. Uses the same stubbed pipeline as test_pipeline_guard.py (see support.py)."""
 import itertools
 import re
 import string
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from support import FakeLLM, make_pipeline, script_of, write_script
 
 from ragscript import checks, config
-from ragscript.pipeline import Pipeline
-from test_pipeline_guard import FakeLLM, FakeRetriever
 
+CK = config.load()["checks"]
 POOL = ["".join(t) for t in itertools.product(string.ascii_lowercase, repeat=3)]  # 17,576 distinct "words"
 
 
@@ -49,12 +46,7 @@ class LengthLLM(FakeLLM):
 
 
 def run(tmp_path, llm):
-    cfg = config.load()
-    cfg["llm"]["parallel"] = 1
-    cfg["paths"]["output_dir"] = str(tmp_path)
-    p = Pipeline(cfg, FakeRetriever(), llm)
-    md = p.write("a guard keeps seeing himself", "horror", 5, "hook text", progress=lambda m: None)["markdown"]
-    return md[md.index("## Script") + 9: md.index("## Chapters")].strip()
+    return script_of(write_script(make_pipeline(tmp_path, llm))["markdown"])
 
 
 def test_overlong_script_is_trimmed_to_within_10_percent(tmp_path):
@@ -63,7 +55,7 @@ def test_overlong_script_is_trimmed_to_within_10_percent(tmp_path):
     n = checks.spoken_count(script)
     assert 675 <= n <= 825, n
     assert 1 <= llm.fit_calls <= 4
-    assert checks.dedupe(script) == script
+    assert checks.dedupe(script, CK) == script
 
 
 def test_short_script_moves_toward_target_without_repeats(tmp_path):
@@ -71,7 +63,7 @@ def test_short_script_moves_toward_target_without_repeats(tmp_path):
     script = run(tmp_path, llm)
     n = checks.spoken_count(script)
     assert 420 < n <= 750 * 1.1
-    assert checks.dedupe(script) == script
+    assert checks.dedupe(script, CK) == script
 
 
 def test_length_fix_cannot_reintroduce_repeats(tmp_path):
@@ -79,7 +71,7 @@ def test_length_fix_cannot_reintroduce_repeats(tmp_path):
     script = run(tmp_path, llm)
     assert llm.fit_calls >= 1
     assert checks.spoken_count(script) == 420, "a rewrite that repeats text must be rejected"
-    assert checks.dedupe(script) == script
+    assert checks.dedupe(script, CK) == script
 
 
 def test_on_target_script_makes_no_extra_calls(tmp_path):

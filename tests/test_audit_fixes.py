@@ -1,28 +1,18 @@
 """Regression tests for the audit findings: bad model JSON, verify evidence, length fit with line breaks, long text
 without full stops. Same offline stubs as test_pipeline_guard.py."""
 import json
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from ragscript import checks, chunking, config
-from ragscript.pipeline import Pipeline
+from support import BEATS, FakeLLM, FakeRetriever
+from support import make_pipeline as pipeline
+from support import write_script as write
 from test_length_guard import LengthLLM
-from test_pipeline_guard import BEATS, FakeLLM, FakeRetriever
+
+from ragscript import checks, chunking, config, grounding
+from ragscript.ingest import Ingest
+from ragscript.story import Story
 
 CFG = config.load()
-
-
-def pipeline(tmp_path, llm, retriever=None):
-    cfg = config.load()
-    cfg["llm"]["parallel"] = 1
-    cfg["paths"]["output_dir"] = str(tmp_path)
-    return Pipeline(cfg, retriever or FakeRetriever(), llm)
-
-
-def write(p, genre="horror"):
-    return p.write("a guard keeps seeing himself", genre, 5, "hook text", progress=lambda m: None)
+CK = CFG["checks"]
 
 
 def test_package_answer_that_is_not_an_object_is_retried(tmp_path):
@@ -128,9 +118,9 @@ def test_deleted_file_leaves_no_chunks_even_if_its_tagging_failed(tmp_path, monk
     def tagger_down(text):
         raise ConnectionError("ollama is down")
 
-    assert st.ingest(tagger_down)["scripts"] > 0  # indexed, but the file is not marked done
+    assert Ingest(st, cfg).run(tagger_down)["scripts"] > 0  # indexed, but the file is not marked done
     f.unlink()
-    assert st.ingest(tagger_down) == {"scripts": 0, "lore": 0, "hooks": 0}
+    assert Ingest(st, cfg).run(tagger_down) == {"scripts": 0, "lore": 0, "hooks": 0}
 
 
 def test_outline_retries_with_thinking_off_when_thinking_returns_no_json(tmp_path):
@@ -158,11 +148,11 @@ def test_weakest_section_is_revised_only_when_the_rewrite_has_fewer_flaws(tmp_pa
     good = "I walked in and saw the door. I knew it was locked. [PAUSE] I found the key."
 
     parts, notes = ["Plain text here.", bad], []
-    out = Refiner(lambda stage, vars, **kw: good, cfg, []).revise_weakest(parts, "Eli", g, notes)
+    out = Refiner(lambda stage, vars, **kw: good, cfg, []).revise_weakest(parts, Story("b", g, "Eli", 750, 5, notes=notes))
     assert out[1] == good and out[0] == parts[0] and "Revised section 2" in notes[0]
     notes.clear()
     # a rewrite that fixes nothing is not kept
-    assert Refiner(lambda stage, vars, **kw: bad, cfg, []).revise_weakest(parts, "Eli", g, notes) == parts and "rejected" in notes[0]
+    assert Refiner(lambda stage, vars, **kw: bad, cfg, []).revise_weakest(parts, Story("b", g, "Eli", 750, 5, notes=notes)) == parts and "rejected" in notes[0]
 
 
 def test_every_genre_gets_the_shared_tense_and_pause_rules(tmp_path):
@@ -172,11 +162,11 @@ def test_every_genre_gets_the_shared_tense_and_pause_rules(tmp_path):
 
 
 def test_cue_tense_and_crutch_word_checks():
-    assert checks.mixed_tense("I walked in. I saw it. I knew. I see the door. I hear it. I feel cold.")
-    assert not checks.mixed_tense("I walked in. I saw it. I knew. I found the key. She runs.")
-    assert not checks.mixed_tense("She walked in and saw him.")  # third person never fires
+    assert checks.mixed_tense("I walked in. I saw it. I knew. I see the door. I hear it. I feel cold.", CK)
+    assert not checks.mixed_tense("I walked in. I saw it. I knew. I found the key. She runs.", CK)
+    assert not checks.mixed_tense("She walked in and saw him.", CK)  # third person never fires
     text = " ".join(["The heavy door shut."] * 6 + ["Then silence fell over everything we owned here."] * 2)
-    assert checks.overused_words(text)[0][0] == "heavy"
+    assert checks.overused_words(text, CK)[0][0] == "heavy"
 
 
 def test_store_filter_exists_once_as_chroma_where_and_python_test(tmp_path, monkeypatch):
@@ -190,7 +180,7 @@ def test_store_filter_exists_once_as_chroma_where_and_python_test(tmp_path, monk
         (tmp_path / "data" / genre / f"{name}.txt").write_text(fm + f"The {word} stood near the old {genre} wall. " * 60, encoding="utf-8")
     st = Store(cfg)
     monkeypatch.setattr(st, "embed", lambda texts: [[1.0, 0.0] for _ in texts])
-    st.ingest(lambda text: "{}")
+    Ingest(st, cfg).run(lambda text: "{}")
     hits = st.lexical("scripts", "tide", 5, "horror")
     assert hits and all(h["meta"]["genre"] == "horror" for h in hits)  # the fantasy file is filtered out
     assert Store.matches({"genre": "any"}, "horror") and not Store.matches({"genre": "fantasy"}, "horror")
@@ -199,64 +189,25 @@ def test_store_filter_exists_once_as_chroma_where_and_python_test(tmp_path, monk
     assert st.lexical("scripts", "tide", 5, "cthulhu") == []
 
 
-def test_section_issues_judge_drafts_and_finished_sections_with_one_function():
-    from ragscript.refine import section_issues
+def test_draft_and_final_issues_judge_the_two_stages_with_named_entry_points():
+    from ragscript.refine import draft_issues, final_issues
     cfg = config.load()
     twice = "I walked in. [PAUSE] I see the door. [PAUSE] I knew it. [PAUSE] I find the key. I hear a step. I looked up."
-    assert not section_issues(twice, "", cfg, [])  # a draft is not judged on cues
-    styled = section_issues(twice, "", cfg, [], style=True)
-    assert any("[PAUSE]" in x for x in styled) and any("tense" in x for x in styled)
-    assert section_issues("word " * 400, "", cfg, [], budget=100)[0].startswith("it was 400 words")
-    assert section_issues("A fine line.", "", cfg, ["fine line"], style=True) == ["it used banned phrases: fine line"]
+    assert not draft_issues(twice, "", cfg, [], budget=22)  # a draft is not judged on cues
+    kinds = [i.kind for i in final_issues(twice, "", cfg, [])]
+    assert "pause" in kinds and "tense" in kinds
+    assert draft_issues("word " * 400, "", cfg, [], budget=100)[0].kind == "length"
+    assert [i.kind for i in final_issues("A fine line.", "", cfg, ["fine line"])] == ["banned"]
 
 
-def test_report_measures_the_script_and_only_fact_checks_grounded_genres():
-    from ragscript import report
-    cfg = config.load()
-    script = "Captain Briggs sailed in 1872. [PAUSE] {{INVENTED: A cold wind rose.}}"
-    kw = dict(target_words=10, minutes=5, refs=[], cited_text={}, banned=[], cfg=cfg, notes=[])
-    plain = report.build(script, grounded=False, **kw)
-    assert plain.uncited_facts == [] and plain.pause_cues == 1 and plain.invented == ["A cold wind rose."]
-    assert report.build(script, grounded=True, **kw).uncited_facts == ["Captain Briggs sailed in 1872."]
-    assert plain.sentence_range == "10-15"
-
-
-def test_short_refrains_repeated_across_sections_are_caught():
-    earlier = "The monitor hummed. [PAUSE] It was watching me back."
-    text = "I froze in the hall. [PAUSE] It was watching me back. Then it smiled. Then it smiled."
-    assert checks.repeated_lines(text, earlier) == ["It was watching me back.", "Then it smiled."]
-    assert checks.repeated_lines("A new line here.", earlier) == []
-    assert checks.crowded_words("The heavy door was heavy and the heavy latch stuck.", 3) == [("heavy", 3)]
-    assert checks.crowded_words("A heavy door and a light latch.", 3) == []
-
-
-def test_section_issues_flag_reused_lines_and_crowded_words_only_in_style_mode():
-    from ragscript.refine import section_issues
+def test_final_issues_flag_reused_lines_and_crowded_words_and_drafts_do_not():
+    from ragscript.refine import draft_issues, final_issues
     cfg = config.load()
     earlier = "It was watching me back."
     text = "The metal door was cold. It was watching me back. I touched the metal frame, then the metal latch."
-    assert not section_issues(text, earlier, cfg, [])  # drafts are not judged on this
-    issues = section_issues(text, earlier, cfg, [], style=True)
-    assert any("reuses lines" in x for x in issues) and any("metal (x3)" in x for x in issues)
-
-
-def test_revision_pass_fixes_up_to_the_configured_number_of_sections():
-    from ragscript import genre
-    from ragscript.refine import Refiner
-    cfg = config.load()
-    g = genre.load(cfg, "horror")
-    bad = "I walked in. [PAUSE] I stood still. [PAUSE] I found the key."
-    fixed = "I walked in and stood still. I found the key."
-    parts, notes = ["Fine start here.", bad, bad.replace("key", "lock"), bad.replace("key", "door")], []
-    calls = []
-
-    def ask(stage, vars, **kw):
-        calls.append(stage)
-        return fixed
-
-    out = Refiner(ask, cfg, []).revise_weakest(parts, "Eli", g, notes)
-    assert calls == ["revise"] * cfg["checks"]["revise_sections"]  # two rewrites, not three
-    assert sum(1 for p in out if p == fixed) == cfg["checks"]["revise_sections"] and out[0] == parts[0]
+    assert not draft_issues(text, earlier, cfg, [], budget=len(text.split()))  # drafts are not judged on this
+    issues = {i.kind: i for i in final_issues(text, earlier, cfg, [])}
+    assert "lines" in issues and "metal x3" in issues["crowded"].detail
 
 
 def test_images_that_return_through_the_script_are_found_across_word_forms():
@@ -264,18 +215,19 @@ def test_images_that_return_through_the_script_are_found_across_word_forms():
             "The clink of my keys followed me. A smell like ozone stung my nose.")
     assert checks.crowded_phrases(text, 3) == [("smell ozone", 3)]  # "clink keys" is only twice
     earlier = "The smell of ozone hung in the hall. The smell of ozone grew."
-    assert checks.repeated_phrases("I breathed the smell of ozone again.", earlier) == [("smell ozone", 3)]
-    assert checks.repeated_phrases("I breathed fresh sea air.", earlier) == []
-    assert checks.repeated_phrases("The smell of ozone first appeared here.", "") == []  # a first use is never flagged
+    assert checks.repeated_phrases("I breathed the smell of ozone again.", earlier, 3) == [("smell ozone", 3)]
+    assert checks.repeated_phrases("I breathed fresh sea air.", earlier, 3) == []
+    assert checks.repeated_phrases("The smell of ozone first appeared here.", "", 3) == []  # a first use is never flagged
 
 
 def test_rewrite_pass_asks_for_fresh_details_when_an_image_keeps_returning():
-    from ragscript.refine import section_issues
+    from ragscript.refine import draft_issues, final_issues
     cfg = config.load()
     earlier = "The smell of ozone hung in the hall. The smell of ozone grew. The smell of ozone stayed."
-    issues = section_issues("I caught the smell of ozone once more.", earlier, cfg, [], style=True)
-    assert any("images already used" in x and "smell ozone" in x for x in issues)
-    assert not section_issues("I caught the smell of ozone once more.", earlier, cfg, [])  # drafts are not judged on it
+    line = "I caught the smell of ozone once more."
+    issues = {i.kind: i for i in final_issues(line, earlier, cfg, [])}
+    assert "images already used" in issues["images"].message and "smell ozone" in issues["images"].detail
+    assert not draft_issues(line, earlier, cfg, [], budget=8)  # drafts are not judged on it
 
 
 def test_interrupted_ingest_keeps_the_progress_of_the_files_already_done(tmp_path, monkeypatch):
@@ -304,7 +256,7 @@ pov: first
 
     monkeypatch.setattr(st, "embed", embed)
     with pytest.raises(KeyboardInterrupt):
-        st.ingest(lambda text: "{}")
+        Ingest(st, cfg).run(lambda text: "{}")
     state = _json.loads((tmp_path / "db/s.json").read_text())
     assert list(state["files"]) == ["horror/a.txt"]  # the finished file is recorded, so the next run skips it
 
@@ -312,8 +264,8 @@ pov: first
 def test_dialogue_in_another_tense_is_not_counted_as_a_tense_switch():
     narration = "I walked in. I saw the door. I knew it was locked. "
     speech = 'He said, "I see it, I hear it, I feel it." '
-    assert not checks.mixed_tense(narration + speech)
-    assert checks.mixed_tense(narration + "I see it. I hear it. I feel it.")
+    assert not checks.mixed_tense(narration + speech, CK)
+    assert checks.mixed_tense(narration + "I see it. I hear it. I feel it.", CK)
 
 
 def test_polish_and_fit_outputs_lose_invented_bracket_notes():
@@ -323,12 +275,106 @@ def test_polish_and_fit_outputs_lose_invented_bracket_notes():
     g = genre.load(cfg, "horror")
     sections = [({"beat": "hook", "words": 20}, "I opened the door and listened for a long quiet moment in the hall.")]
     out = Refiner(lambda stage, vars, **kw: "I opened the door [recurring] and listened for a long quiet moment in the hall.",
-                  cfg, []).polish(sections, "Eli", g, [])
+                  cfg, []).polish(sections, Story("b", g, "Eli", 750, 5))
     assert "[recurring]" not in out[0]
 
 
-def test_a_value_that_looks_like_a_placeholder_is_inserted_as_it_is(tmp_path):
-    cfg = config.load()
-    p = Pipeline(cfg, FakeRetriever(), FakeLLM(), banned=["bad phrase"])
-    out = p._tpl("revise", text="the lore says <<banned>> here", narrator="n", genre_rules="g", problems="p", target_words=5)
+def test_a_value_that_looks_like_a_placeholder_is_inserted_as_it_is():
+    from ragscript import prompts
+    out = prompts.stage(config.load(), "revise", ["bad phrase"], text="the lore says <<banned>> here", narrator="n",
+                        genre_rules="g", problems="p", target_words=5)
     assert out.count("<<banned>>") == 1 and "bad phrase" in out  # the template's own placeholder was filled
+
+
+def test_short_refrains_repeated_across_sections_are_caught():
+    earlier = "The monitor hummed. [PAUSE] It was watching me back."
+    text = "I froze in the hall. [PAUSE] It was watching me back. Then it smiled. Then it smiled."
+    assert checks.repeated_lines(text, earlier) == ["It was watching me back.", "Then it smiled."]
+    assert checks.repeated_lines("A new line here.", earlier) == []
+    assert checks.crowded_words("The heavy door was heavy and the heavy latch stuck.", 3) == [("heavy", 3)]
+    assert checks.crowded_words("A heavy door and a light latch.", 3) == []
+
+
+def test_revision_pass_fixes_up_to_the_configured_number_of_sections():
+    from ragscript import genre
+    from ragscript.refine import Refiner
+    cfg = config.load()
+    g = genre.load(cfg, "horror")
+    bad = "I walked in. [PAUSE] I stood still. [PAUSE] I found the key."
+    fixed = "I walked in and stood still. I found the key."
+    parts, notes = ["Fine start here.", bad, bad.replace("key", "lock"), bad.replace("key", "door")], []
+    calls = []
+
+    def ask(stage, vars, **kw):
+        calls.append(stage)
+        return fixed
+
+    out = Refiner(ask, cfg, []).revise_weakest(parts, Story("b", g, "Eli", 750, 5, notes=notes))
+    assert calls == ["revise"] * cfg["checks"]["revise_sections"]  # two rewrites, not three
+    assert sum(1 for p in out if p == fixed) == cfg["checks"]["revise_sections"] and out[0] == parts[0]
+
+
+def test_report_measures_the_script_and_only_fact_checks_grounded_genres():
+    from ragscript import report
+    cfg = config.load()
+    script = "Captain Briggs sailed in 1872. [PAUSE] {{INVENTED: A cold wind rose.}}"
+    kw = dict(target_words=10, minutes=5, refs=[], cited_text={}, banned=[], cfg=cfg, notes=[])
+    plain = report.build(script, grounded=False, **kw)
+    assert plain.uncited_facts == [] and plain.pause_cues == 1 and plain.invented == ["A cold wind rose."]
+    assert report.build(script, grounded=True, **kw).uncited_facts == ["Captain Briggs sailed in 1872."]
+    assert plain.sentence_range == "10-15"
+
+
+def test_attempt_keeps_an_accepted_rewrite_cleans_it_and_reverts_a_rejected_one():
+    from ragscript.refine import attempt
+    new, kept = attempt("old text.", lambda: "A fine rewrite [recurring] of it.", lambda n: "fine" in n)
+    assert kept and new == "A fine rewrite of it."  # the invented note is stripped before the text is judged
+    old, kept = attempt("old text.", lambda: "A poor rewrite.", lambda n: "fine" in n)
+    assert not kept and old == "old text."
+
+
+def test_report_decides_which_warnings_to_show_and_render_only_prints_them():
+    from ragscript import render, report
+    cfg = config.load()
+    kw = dict(target_words=10, minutes=5, refs=[], cited_text={}, grounded=False, banned=[], cfg=cfg, notes=[])
+    calm = report.build("I walked in. [PAUSE] Then I left.", **kw)
+    assert calm.flags == [] and calm.pauses_per_minute == 0.2
+    halting = report.build("I walked in. " + "[PAUSE] I stood. " * 12, **kw)
+    assert halting.flags and "[PAUSE] cues in 5 minutes" in halting.flags[0]
+    md = render.render(render.Doc("b", "horror", 5, "n", {}, [(0, "c")], {}), "text", halting)
+    assert "- " + halting.flags[0] in md
+
+
+def test_eval_ranks_are_computed_once_and_give_both_the_hit_and_the_top_k():
+    import sys
+    sys.path.insert(0, str(config.ROOT))
+    from eval.run_eval import ranks, top_k
+
+    class Ret:
+        def search(self, coll, query, genre, k=4):
+            return [{"meta": {"source": "lore_a.md"}}, {"meta": {"source": "x.txt"}}] if coll == "lore" else []
+
+    class PL:
+        ret = Ret()
+
+    rk = ranks(PL, {"brief": "q", "genre": "history", "expect_sources": ["lore_a", "missing"]})
+    assert rk == {"lore_a": 1, "missing": 11}  # not found = k + 1
+    assert top_k([rk]) == {"top1": 0.5, "top3": 0.5, "top10": 0.5}
+
+
+def test_rolling_budget_spreads_an_overshoot_over_the_beats_still_to_write():
+    from ragscript.draft import Drafter
+    beats = [{"words": 100, "orig": 100}, {"words": 100, "orig": 100}, {"words": 100, "orig": 100}]
+    sections = [(beats[0], "word " * 250)]  # 250 written for a 100-word beat: counts only up to its plan
+    Drafter._rebudget(beats, 1, sections, 300)
+    assert beats[1]["words"] == beats[2]["words"] == 100 * 200 // 200  # 100 done, 200 left for 200 planned
+    sections = [(beats[0], "word " * 40)]  # an undershoot is made up by the later beats
+    Drafter._rebudget(beats, 1, sections, 300)
+    assert beats[1]["words"] > 100
+
+
+def test_prompt_filling_uses_config_values_and_leaves_unknown_placeholders():
+    from ragscript import prompts
+    cfg = config.load()
+    out = prompts.fill("range <<sentence_range>>, pause <<max_pause>>, <<unknown>>, <<name>>", cfg, (), name="<<banned>>")
+    assert out == "range 10-15, pause 1, <<unknown>>, <<banned>>"

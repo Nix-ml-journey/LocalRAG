@@ -43,6 +43,7 @@ script:
 style:                      # narration targets: the prompts and the checks both read these, so tune them here only
   sentence_words: [10, 15]  # average spoken words per sentence
   max_pause_per_section: 1  # [PAUSE] cues allowed in one section
+  max_pauses_per_minute: 2  # more [PAUSE] cues than this a minute is reported as halting
 
 checks:
   ngram: 5
@@ -53,6 +54,15 @@ checks:
   phrase_repeat: 4          # ... an image (two content words, e.g. smell + ozone) used this often in the script: the narrator's recurring details are allowed 3
   word_repeat: 3            # the weakest-section rewrite flags a content word used this often in one section
   revise_sections: 2        # ... and rewrites at most this many sections, worst first
+  dedupe_ngram: 4           # the repeat guard compares 4-grams of paragraphs and sentences
+  dedupe_paragraph: 0.6     # ... drops a paragraph when more than this share of its n-grams was already written
+  dedupe_sentence: 0.7      # ... or a sentence (of dedupe_min_words+ words) over this share
+  dedupe_min_words: 6
+  polish_repeat_slack: 0.05 # a polished section is rejected if its repeated-phrase rate rose by more than this
+  tense_floor: 3            # a narrator switched tense when both tenses appear this often ...
+  tense_share: 0.2          # ... and the rarer one is this share of all first-person verbs
+  crowd_min: 5              # a crutch word (5+ letters) is used this often in the script ...
+  crowd_share: 0.006        # ... and makes up more than this share of all words
 
 length:                     # tuned against the README results; change one at a time and re-measure
   draft_min: 0.75           # a section draft is accepted between draft_min and draft_max x its word budget

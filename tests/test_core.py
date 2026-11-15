@@ -45,7 +45,7 @@ def test_grounding_and_repeat_helpers():
                                    "I met Captain Briggs {{INVENTED: a rumour}}.")
     assert flagged == ["It sailed on 4 May 1872."]
     p = "I slam the door and my watch stops at two thirty four"
-    assert checks.drop_repeats("Something fresh happens in the cellar below us.\n\n" + p, earlier=p) == \
+    assert checks.drop_repeats("Something fresh happens in the cellar below us.\n\n" + p, p, 4, 0.6) == \
         "Something fresh happens in the cellar below us."
 
 
@@ -73,7 +73,7 @@ def test_mark_invented_wraps_only_rejected_sentences():
 def test_drop_repeat_sentences():
     old = "The note said we left the wine and nothing else was found aboard."
     new = "A fresh thing happens now in the dark hold. The note said we left the wine and nothing else.\n\n[PAUSE]"
-    out = checks.drop_repeat_sentences(new, earlier=old)
+    out = checks.drop_repeat_sentences(new, old, 4, 0.7, 6)
     assert "fresh thing" in out and "left the wine" not in out and out.endswith("[PAUSE]")
 
 
@@ -130,7 +130,7 @@ def test_overlap_flag_and_repeat_rate():
     assert checks.overlap_flags(src, [src], 5, 0.8)
     assert not checks.overlap_flags("a completely different sentence about distant mountains today", [src], 5, 0.8)
     p = "I slam the door and my watch stops at two thirty four"
-    assert checks.drop_repeats(f"{p}.\n\nSomething new happens in the cellar below.\n\n{p} again.").count("slam") == 1
+    assert checks.drop_repeats(f"{p}.\n\nSomething new happens in the cellar below.\n\n{p} again.", "", 4, 0.6).count("slam") == 1
     assert checks.repeated_rate("a b c d e a b c d e", 4) > 0.5
     assert checks.spoken_count("Hello [PAUSE] world {{INVENTED: red door}}") == 4
 

@@ -3,7 +3,7 @@ import logging
 import re
 from dataclasses import dataclass
 
-from . import config, loaders
+from . import config, loaders, prompts
 
 log = logging.getLogger("ragscript")
 GROUNDED_RULE = (
@@ -45,7 +45,7 @@ def load(cfg, name: str, style: str = "") -> Genre:
         f = pdir / "default.md"
     fm, text = loaders.split_front_matter(f.read_text(encoding="utf-8"))
     grounded = bool(fm.get("grounded", False))
-    rules = text.strip().replace("<<sentence_range>>", config.sentence_range(cfg)) + "\n\n" + common_rule(cfg)
+    rules = prompts.fill(text.strip(), cfg) + "\n\n" + common_rule(cfg)
     if grounded:
         rules += "\n\n" + GROUNDED_RULE
     if style.strip():

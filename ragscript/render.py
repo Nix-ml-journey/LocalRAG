@@ -54,10 +54,7 @@ def render(doc: Doc, script, report) -> str:
         L.append("- Words used often (crutch words, consider varying): " + ", ".join(f"{w} ×{n}" for w, n in r.overused_words))
     if r.repeated_images:
         L.append("- Images returning through the script (consider cutting repeats): " + ", ".join(f"{p} ×{n}" for p, n in r.repeated_images))
-    if r.mixed_tense:
-        L.append("- **Tense switches between past and present in the narration (check before recording).**")
-    if r.pause_cues > 2 * r.minutes:
-        L.append(f"- {r.pause_cues} [PAUSE] cues in {r.minutes} minutes: more than 2 a minute reads as halting")
+    L += [f"- {f}" for f in r.flags]
     if r.overlap_flags:
         L += ["- **>80% overlap with a source (rewrite these):**"] + [f"  - ({x}) {p}…" for p, x in r.overlap_flags]
     else:

@@ -1,5 +1,6 @@
 """Post-generation checks on the narration itself: repeats, source overlap, sentence length, tense, crutch words.
-Fact grounding ([S#] and {{INVENTED}}) lives in grounding.py; the sentence splitter and tokenizer in text.py."""
+Fact grounding ([S#] and {{INVENTED}}) lives in grounding.py; the sentence splitter and tokenizer in text.py.
+Every threshold comes from config.yaml `checks:` (passed in as `ck`); nothing is tuned by editing this file."""
 import re
 from collections import Counter
 
@@ -35,7 +36,7 @@ def reused_quotes(text, earlier):
     return [q for q in QUOTE.findall(text) if q.lower() in low]
 
 
-def drop_repeats(text, earlier="", n=4, thr=0.6):
+def drop_repeats(text, earlier, n, thr):
     """Remove paragraphs that mostly repeat an earlier one or a paragraph of `earlier`
     (small models re-write the previous section)."""
     kept, seen = [], _grams(words(earlier), n)  # union of everything before: a retelling may merge several old paragraphs
@@ -48,7 +49,7 @@ def drop_repeats(text, earlier="", n=4, thr=0.6):
     return "\n\n".join(kept)
 
 
-def drop_repeat_sentences(text, earlier="", n=4, thr=0.7, min_words=6):
+def drop_repeat_sentences(text, earlier, n, thr, min_words):
     """Remove sentences whose n-grams are mostly already present in `earlier` or earlier in this text
     (re-told facts, repeated quotes). Paragraph breaks are kept."""
     seen = _grams(words(earlier), n)
@@ -67,10 +68,12 @@ def drop_repeat_sentences(text, earlier="", n=4, thr=0.7, min_words=6):
     return "\n\n".join(out)
 
 
-def dedupe(text, earlier=""):
+def dedupe(text, ck, earlier=""):
     """The anti-repetition pass: repeated paragraphs, then repeated sentences, against `earlier` and the text itself.
     Always call this instead of the two functions separately: each catches what the other misses."""
-    return drop_repeat_sentences(drop_repeats(text, earlier), earlier)
+    n = ck["dedupe_ngram"]
+    return drop_repeat_sentences(drop_repeats(text, earlier, n, ck["dedupe_paragraph"]), earlier, n,
+                                 ck["dedupe_sentence"], ck["dedupe_min_words"])
 
 
 def avg_sentence_words(text) -> float:
@@ -104,28 +107,38 @@ def tense_mix(text):
     return pres, past
 
 
-def mixed_tense(text, floor=3, share=0.2) -> bool:
+def mixed_tense(text, ck) -> bool:
     pres, past = tense_mix(text)
-    return min(pres, past) >= floor and min(pres, past) / (pres + past) >= share
+    rarer = min(pres, past)
+    return rarer >= ck["tense_floor"] and rarer / (pres + past) >= ck["tense_share"]
 
 
 _STOP = set("""about above after again against along also always another around because before behind being below between
 beyond could doing during every exactly except further having himself herself itself might never often other
 should since still than their theirs them themselves there these they those though through under until upon
 very were what when where whether which while whose would your yours yourself""".split())
-
-
-def overused_words(text, min_count=5, share=0.006, top=5):
-    """Content words (5+ letters) that recur far more than natural prose does: the crutch words a small model
-    leans on ("heavy", "hum"). Returns [(word, count)], most frequent first."""
-    w = [x for x in words(unmark(text)) if len(x) >= 5 and x not in _STOP]
-    total = max(1, len(words(text)))
-    c = Counter(w)
-    return [(k, v) for k, v in c.most_common(top * 3) if v >= min_count and v / total >= share][:top]
-
-
 _FUNC = _STOP | set("""that with from this they them were been have into over like just when then than what your
 does some only more each even also very much such back there here will""".split())
+
+
+def content_counts(text):
+    """Counter of the content words (5+ letters, no function words) in the text: the one counter behind both
+    crutch-word checks."""
+    return Counter(x for x in words(unmark(text)) if len(x) >= 5 and x not in _STOP)
+
+
+def overused_words(text, ck, top=5):
+    """Content words that recur far more than natural prose does across a whole script: the crutch words a small
+    model leans on ("heavy", "hum"). Returns [(word, count)], most frequent first."""
+    total = max(1, len(words(text)))
+    found = [(k, v) for k, v in content_counts(text).most_common(top * 3)
+             if v >= ck["crowd_min"] and v / total >= ck["crowd_share"]]
+    return found[:top]
+
+
+def crowded_words(text, limit):
+    """[(word, count)] for content words used `limit` or more times in one stretch of text (one section)."""
+    return [(w, n) for w, n in content_counts(text).most_common() if n >= limit]
 
 
 def _pairs(text):
@@ -138,12 +151,12 @@ def _pairs(text):
     return c
 
 
-def crowded_phrases(text, min_count=3, top=5):
+def crowded_phrases(text, min_count, top=5):
     """[(phrase, count)] for the images (two content words) that return `min_count`+ times in the text."""
     return [(" ".join(k), v) for k, v in _pairs(text).most_common(top * 2) if v >= min_count][:top]
 
 
-def repeated_phrases(text, earlier, min_count=3):
+def repeated_phrases(text, earlier, min_count):
     """[(phrase, total)] for images in `text` that were already used in `earlier` and, counting both, appear
     `min_count`+ times: the sensory anchors a small model brings back in every section."""
     before, now = _pairs(earlier), _pairs(text)
@@ -162,12 +175,6 @@ def repeated_lines(text, earlier="", min_words=2):
                 out.append(s.strip())
             seen.add(w)
     return out
-
-
-def crowded_words(text, limit=3):
-    """[(word, count)] for content words (5+ letters) used `limit` or more times in one stretch of text."""
-    c = Counter(x for x in words(unmark(text)) if len(x) >= 5 and x not in _STOP)
-    return [(w, n) for w, n in c.most_common() if n >= limit]
 
 
 def banned_hits(text, phrases):

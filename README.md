@@ -34,7 +34,7 @@ Measured on this machine (num_ctx 16384). Rows other than the fantasy row were m
 
 | Check | Result |
 |---|---|
-| Retrieval, 17 briefs (`cli.py eval --retrieval-only`) | right source at top 1: 0.87, top 3: 0.96, top 10: 0.96; 16 of 17 briefs hit (b10 misses) |
+| Retrieval, 17 briefs (`cli.py eval --retrieval-only`) | right source at top 1: 0.87, top 3: 0.91, top 10: 0.96; 16 of 17 briefs hit (b10 misses). Top 3 was 0.96 before 29 more horror stories entered the index: one short hand-written sample now ranks 4th behind a longer story |
 | Three 5-min scripts (history / cthulhu / horror), target 750 words | 780 / 824 / 783 words, accuracy 96.0% / 90.1% / 95.6% |
 | Repeated 4-grams in those scripts | 4.2% / 0.7% / 4.4% |
 | Speed | about 4 min per 5-min script; generation is decode-bound at ~40 tokens/s |
@@ -42,7 +42,7 @@ Measured on this machine (num_ctx 16384). Rows other than the fantasy row were m
 | Fantasy 5-min script, two runs on gemma4:12b (target 750) | 753 / 762 words, accuracy 99.6% / 98.4%, repeats 0.3% / 1.6%, sentences 14.8 / 14.9 words, 407-695 s each, peak VRAM 10.7 GB |
 | History 5-min script on gemma4:12b, after the Verify upgrade | 722 words (accuracy 96.3%), repeats 4.3%, sentences 14.4 words, 14 sentences marked `{{INVENTED}}`; an earlier history run on the same model gave 753 words, repeats 1.3% |
 | Sci-fi 5-min script on gemma4:12b, after the refine pass and tightened prompts | 759 words (accuracy 98.8%), repeats 1.6%, sentences 15.5 words, 1.4 `[PAUSE]` per minute, no tense switches, 2 repeated paragraphs removed |
-| Offline tests (no GPU, no Ollama) | 68 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
+| Offline tests (no GPU, no Ollama) | 73 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
 
 Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks claims the lore does not support, `[S1]` marks facts that do):
 > On December 4, 1872, the *Dei Gratia* spotted her sailing erratically in the Atlantic [S1]. No one answered their signals, and a boarding party found the ship completely deserted [S1].
@@ -65,13 +65,14 @@ Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks 
 - **Models:** gemma4:12b (writing) and BAAI/bge-m3 (embeddings). Models are not included; each has its own licence.
 
 ## Code layout
-- `ragscript/pipeline.py`: hooks, outline and section writing. Dependencies are passed in (`Pipeline(cfg, retriever, llm)`); `Pipeline.from_config()` builds the real ones. Every model call carries its stage name (`llm.chat(prompt, stage="outline")`), so test doubles never match on prompt text.
-- `ragscript/refine.py`: everything after a section is drafted: `section_issues()` (the one place section quality is judged), polish, rewrite of the weakest section, length fit. `Refiner.run` is its interface.
-- `ragscript/grounding.py`: `[S#]` citations, the `{{INVENTED: ...}}` mark protocol and the Verify step. `text.py` has the one sentence splitter and tokenizer; `checks.py` the checks on the narration (repeats, overlap, tense, crutch words).
-- `ragscript/report.py` + `render.py`: `Report` holds every measurement of a finished script; `render` turns a `Doc` plus the script plus the `Report` into markdown. A new check is a field in `Report` and a line in `render`.
-- `ragscript/store.py` + `retrieve.py`: Chroma/BM25 index (`Store.where` and `Store.matches` are the same genre/beat filter) and hybrid search. `chunking.py`, `loaders.py`, `metadata.py` feed `ingest`; `sources.py` numbers the cited chunks.
-- `ragscript/llm.py` (Ollama, OOM retry), `genre.py`, `vram.py`. Entry points: `cli.py`, `app.py`, `main.py`.
-- `config.yaml` holds every tuning number (`style:`, `length:`, `checks:`). `style:` (sentence length, `[PAUSE]` limit) is filled into the prompts and the checks, so it is tuned in one place; `prompts/` holds the stage and genre prompts.
+- `ragscript/pipeline.py` orchestrates: hooks, outline, then the stage modules below. Dependencies are passed in (`Pipeline(cfg, retriever, llm)`); `Pipeline.from_config()` builds the real ones. Every model call carries its stage name (`llm.chat(prompt, stage="outline")`), so test doubles never match on prompt text. `story.py` is the `Story` context (brief, genre, narrator, target length, notes) the later stages share; `prompts.py` loads stage templates and fills their `<<placeholders>>` (also used for the genre rules).
+- `ragscript/draft.py`: `Drafter.draft` writes the sections beat by beat (retrieval per beat, rolling word budget, rolling summary, one corrective retry).
+- `ragscript/refine.py`: everything after a section is drafted. `draft_issues()` and `final_issues()` return `Issue(kind, message)` records (the only place section quality is judged); `attempt()` is the one rule for keeping a rewrite only if it is better; `Refiner.run` does polish, rewrite of the worst sections and the length fit.
+- `ragscript/grounding.py`: `[S#]` citations, the `{{INVENTED: ...}}` mark protocol and the Verify step. `text.py` has the one sentence splitter and tokenizer; `checks.py` the checks on the narration (repeats, overlap, tense, crutch words, returning images). Every threshold in it comes from `config.yaml`.
+- `ragscript/report.py` + `render.py`: `Report` holds every measurement of a finished script and decides which warnings (`flags`) to show; `render` turns a `Doc` plus the script plus the `Report` into markdown. A new check is a field in `Report` and a line in `render`.
+- `ragscript/store.py` + `retrieve.py` + `ingest.py`: `Store` is the search index (Chroma plus BM25; `Store.where` and `Store.matches` are the same genre/beat filter), `Retriever` fuses and reranks, `Ingest` fills the store from `data/` and saves its progress after every file. `chunking.py`, `loaders.py`, `metadata.py` feed `ingest`; `sources.py` numbers the cited chunks.
+- `ragscript/llm.py` (Ollama, OOM retry), `genre.py`, `vram.py`. Entry points: `cli.py`, `app.py`, `main.py`. Tests share `tests/support.py` (fake model, fake retriever, `make_pipeline`).
+- `config.yaml` holds every tuning number (`style:`, `length:`, `checks:`). `style:` (sentence length, `[PAUSE]` limits) is filled into the prompts and the checks, so it is tuned in one place; `prompts/` holds the stage and genre prompts.
 
 ## Limitations
 - Single user, single machine; no concurrency design beyond the polish step.

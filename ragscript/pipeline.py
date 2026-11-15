@@ -1,15 +1,19 @@
-"""Multi-stage generation: hooks -> outline -> section-by-section writing -> refine -> checks -> markdown."""
+"""The story pipeline: hooks -> outline -> draft (draft.py) -> refine (refine.py) -> verify -> package -> markdown.
+This module orchestrates; each stage's work lives in its own module."""
 import json
 import logging
 import re
 
-from . import checks, chunking, config, grounding, render, report, vram
+from . import checks, chunking, config, grounding, prompts, render, report, vram
 from . import genre as genre_pack
+from .draft import Drafter
+from .ingest import Ingest
 from .llm import LLM
-from .refine import Refiner, clean_draft, section_issues, whole_sentences
+from .refine import Refiner
 from .retrieve import Retriever
 from .sources import SourceLedger
 from .store import Store
+from .story import Story
 
 log = logging.getLogger("ragscript")
 
@@ -27,11 +31,12 @@ def load_banned(cfg):
 
 
 class Pipeline:
-    """The story pipeline. Dependencies are passed in: `ret` answers retrieval searches, `llm.chat(prompt, stage=...)`
-    answers model calls, `store` is only needed for ingest. `Pipeline.from_config()` builds the real ones."""
+    """Dependencies are passed in: `ret` answers retrieval searches, `llm.chat(prompt, stage=...)` answers model
+    calls, `store` is only needed for ingest. `Pipeline.from_config()` builds the real ones."""
 
     def __init__(self, cfg, ret, llm, store=None, banned=()):
         self.cfg, self.ret, self.llm, self.store, self.banned = cfg, ret, llm, store, list(banned)
+        self.drafter = Drafter(ret, self._ask, self._k, cfg, self.banned)
         self.refiner = Refiner(self._ask, cfg, self.banned)
 
     @classmethod
@@ -41,23 +46,17 @@ class Pipeline:
         return cls(cfg, Retriever(store, cfg), LLM(cfg), store, load_banned(cfg))
 
     # ---- helpers -------------------------------------------------------
-    def _tpl(self, name, **kw):
-        t = (config.path(self.cfg, "prompts_dir") / "stages" / f"{name}.md").read_text(encoding="utf-8")
-        shared = {"banned": "\n".join(self.banned), "sentence_range": config.sentence_range(self.cfg),
-                  "max_pause": self.cfg["style"]["max_pause_per_section"]}
-        values = {**shared, **kw}
-        # one pass over the template: a value that itself contains "<<name>>" (lore, a brief) is inserted as it is
-        return re.sub(r"<<(\w+)>>", lambda m: str(values.get(m.group(1), m.group(0))), t)
-
-    def _ask(self, stage, tpl_vars, **chat):
-        """One model call: the `stage` template filled with `tpl_vars`. The stage name travels with the call."""
-        return self.llm.chat(self._tpl(stage, **tpl_vars), stage=stage, **chat)
+    def _ask(self, stage, tpl_vars, tail="", **chat):
+        """One model call: the `stage` template filled with `tpl_vars` (plus `tail`, text appended after it). The
+        stage name travels with the call."""
+        return self.llm.chat(prompts.stage(self.cfg, stage, self.banned, **tpl_vars) + tail, stage=stage, **chat)
 
     def _k(self):
         return max(1, round(self.cfg["retrieval"]["final_k"] * self.llm.scale()))  # shrink if ctx was reduced
 
     def ingest(self):
-        return self.store.ingest(lambda text: self._ask("tagger", {"text": text}, temperature=0.1, max_tokens=200))
+        return Ingest(self.store, self.cfg).run(
+            lambda text: self._ask("tagger", {"text": text}, temperature=0.1, max_tokens=200))
 
     # ---- stage 1 -------------------------------------------------------
     def hooks(self, brief, genre, style=""):
@@ -104,78 +103,29 @@ class Pipeline:
             b["words"] = b["orig"] = max(floor, round(int(b["words"]) * scale))
         return data.get("narrator", ""), beats, total
 
-    def _write_section(self, prompt, b, earlier, grounded):
-        # models write 3-5x a small word budget, so cap generation and cut the unfinished last sentence
-        cap = int(b["words"] * self.cfg["length"]["token_cap"]) + 40
-        text = clean_draft(whole_sentences(self.llm.chat(prompt, stage="section", max_tokens=cap)))
-        problems = section_issues(text, earlier, self.cfg, self.banned, budget=b["words"], grounded=grounded)
-        if problems:  # one corrective retry
-            log.info("retry '%s': %s", b["beat"], "; ".join(p[:60] for p in problems))
-            text = clean_draft(whole_sentences(self.llm.chat(
-                prompt + "\n\nPrevious attempt:\n" + text + "\n\nRewrite it; " + "; ".join(problems) + ".",
-                stage="section", max_tokens=cap)))
-        return text
-
-    # ---- stage 3 + 4 ---------------------------------------------------
+    # ---- stages 3 to 6 -------------------------------------------------
     def write(self, brief, genre, minutes, hook, style="", progress=print):
         g = genre_pack.load(self.cfg, genre, style)
-        genre = g.slug  # normalised name: matches data/<slug>/ and the retrieval filter
-        wpm = self.cfg["script"]["wpm"]
+        slug = g.slug  # normalised name: matches data/<slug>/ and the retrieval filter
 
         def stage(msg):  # every stage reports progress and logs VRAM/RAM under its own name
             progress(msg)
             vram.log_stage(msg)
 
-        ledger = SourceLedger()
-        cite = ledger.cite
-
-        notes = []
-        lore0 = self.ret.search("lore", brief, genre, k=self._k())
+        ledger, notes = SourceLedger(), []
+        lore0 = self.ret.search("lore", brief, slug, k=self._k())
         if g.grounded and not lore0:
             notes.append("No lore chunks found for this fact-grounded brief: every factual claim is unverified.")
         stage("Outline…")
-        narrator, beats, total = self.outline(brief, g, minutes, hook, cite(lore0))
+        narrator, beats, total = self.outline(brief, g, minutes, hook, ledger.cite(lore0))
+        story = Story(brief, g, narrator, total, minutes, hook, notes)
         outline_txt = "\n".join(f"{i+1}. {b['beat']} ({b['words']}w): {b.get('title','')} - {b.get('summary','')}"
                                 for i, b in enumerate(beats))
-        summary, sections = "(nothing written yet)", []
-        for i, b in enumerate(beats):
-            stage(f"Writing {i+1}/{len(beats)}: {b['beat']}")
-            if i:  # rolling budget: spread any over/undershoot so far across the beats still to write
-                # overshoot counts only up to the planned size: the polish pass trims drafts back to it
-                done = sum(min(checks.spoken_count(t), x["words"]) for x, t in sections)
-                left = (total - done) / sum(x["orig"] for x in beats[i:])
-                for x in beats[i:]:
-                    x["words"] = max(30, round(x["orig"] * min(1.8, max(0.5, left))))
-            k = self._k()  # re-read each beat: an OOM retry may have halved num_ctx
-            q = f"{b.get('title','')} {b.get('summary','')}"
-            examples = self.ret.search("scripts", q, genre, beat=b["beat"], k=k) or self.ret.search("scripts", q, genre, k=k)
-            if b["beat"] == "outro":  # use the endings library for the last beat
-                examples += self.ret.search("hooks", q, genre, beat="ending", k=k)
-            lore = self.ret.search("lore", f"{brief} {q}", genre, k=k)
-            beat_txt = f"{b['beat']}: {b.get('title','')} - {b.get('summary','')}"
-            if b["beat"] == "hook":
-                beat_txt += f"\nOpen with this chosen hook, polished and extended:\n{hook}"
-            ledger.add_style(examples)  # so the >80% overlap check also covers style examples
-            tail = ""
-            if sections:
-                tail = ("\n\nEnd of the text written so far. Do NOT repeat its sentences, refrains or images; "
-                        "advance the story with new events:\n" + " ".join(sections[-1][1].split()[-120:]))
-            prompt = self._tpl(
-                "section", brief=brief, genre_rules=g.rules, narrator=narrator, outline=outline_txt, beat=beat_txt,
-                beat_words=b["words"], summary=summary + tail,
-                style_examples="\n\n".join(f"- {c['text']}" for c in examples) or "(none)",
-                lore=cite(lore) or "(none)")
-            earlier = "\n\n".join(t for _, t in sections)
-            text = self._write_section(prompt, b, earlier, g.grounded)
-            # drop re-told paragraphs/sentences now so the rolling budget compensates for the lost words
-            text = checks.dedupe(text, earlier) or text
-            sections.append((b, text))
-            if i < len(beats) - 1:  # the last summary would never be read
-                summary = self._ask("summary", dict(previous_summary=summary, new_text=text),
-                                    temperature=0.2, max_tokens=300)
 
-        parts = self.refiner.run(sections, total, narrator, g, notes, stage)
-        script = checks.dedupe("\n\n".join(parts))  # final safety net: nothing repeated may reach the output
+        sections = self.drafter.draft(story, beats, ledger, outline_txt, stage)
+        parts = self.refiner.run(sections, story, stage)
+        ck = self.cfg["checks"]
+        script = checks.dedupe("\n\n".join(parts), ck)  # final safety net: nothing repeated may reach the output
         if not g.grounded:  # [S#] tags only help fact-checking; ungrounded stories get them leaked by the model
             script = re.sub(r"[ \t]*\[S\d+\]", "", script)
         if g.grounded and ledger.cited_text:
@@ -186,19 +136,19 @@ class Pipeline:
                 notes.append(f"Verify step marked {marked} unsupported sentence(s) as INVENTED.")
 
         stage("Packaging…")
-        pkg = self._json("package", dict(genre=genre, brief=brief, outline=outline_txt,
+        pkg = self._json("package", dict(genre=slug, brief=brief, outline=outline_txt,
                                          excerpt=" ".join(script.split()[:500])), (0.7, 0.7),
                          lambda d: d["titles"], max_tokens=800) or {}  # a list or text answer raises here and is retried
         rep = report.build(script, target_words=total, minutes=minutes, refs=ledger.refs, cited_text=ledger.cited_text,
                            grounded=g.grounded, banned=self.banned, cfg=self.cfg, notes=notes)
-        doc = render.Doc(brief, genre, minutes, narrator, pkg,
-                         render.chapters([(b, checks.spoken_count(t)) for b, t in sections], rep.words, wpm),
+        doc = render.Doc(brief, slug, minutes, narrator, pkg,
+                         render.chapters([(b, checks.spoken_count(t)) for b, t in sections], rep.words,
+                                         self.cfg["script"]["wpm"]),
                          ledger.used())
         md = render.render(doc, script, rep)
         out = config.path(self.cfg, "output_dir")
         out.mkdir(exist_ok=True)
-        slug = re.sub(r"[^a-z0-9]+", "-", brief.lower())[:50].strip("-") or "script"
-        path = out / f"{genre}-{minutes}min-{slug}.md"
+        path = out / f"{slug}-{minutes}min-{re.sub(r'[^a-z0-9]+', '-', brief.lower())[:50].strip('-') or 'script'}.md"
         path.write_text(md, encoding="utf-8")
         vram.log_stage("done")
         return {"path": path, "markdown": md, "stats": rep}
