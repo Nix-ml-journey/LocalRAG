@@ -1,7 +1,7 @@
 # Story Script RAG
 
 Local, offline RAG system that writes first-person YouTube story scripts (horror, history mysteries, fantasy,
-Cthulhu, or any genre you name) at a chosen length of 5, 10, 15 or 20 minutes. Everything is free and runs on one
+Cthulhu, sci-fi, literary, or any genre you name) at a chosen length of 5, 10, 15 or 20 minutes. Everything is free and runs on one
 consumer GPU (built and measured on an RTX 5060 Ti 16 GB, peak VRAM under 14.5 GB). The LLM runs on the GPU through
 Ollama; embeddings, ChromaDB and BM25 run on the CPU.
 
@@ -41,6 +41,7 @@ Measured on this machine (num_ctx 16384). Rows other than the fantasy row were m
 | Polish stage with `OLLAMA_NUM_PARALLEL=2` | 18.7 s down to 12.0 s, peak GPU 11.8 to 13.3 GB |
 | Fantasy 5-min script, two runs on gemma4:12b (target 750) | 753 / 762 words, accuracy 99.6% / 98.4%, repeats 0.3% / 1.6%, sentences 14.8 / 14.9 words, 407-695 s each, peak VRAM 10.7 GB |
 | History 5-min script on gemma4:12b, after the Verify upgrade | 722 words (accuracy 96.3%), repeats 4.3%, sentences 14.4 words, 14 sentences marked `{{INVENTED}}`; an earlier history run on the same model gave 753 words, repeats 1.3% |
+| Sci-fi 5-min script on gemma4:12b, after the refine pass and tightened prompts | 759 words (accuracy 98.8%), repeats 1.6%, sentences 15.5 words, 1.4 `[PAUSE]` per minute, no tense switches, 2 repeated paragraphs removed |
 | Offline tests (no GPU, no Ollama) | 59 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
 
 Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks claims the lore does not support, `[S1]` marks facts that do):
@@ -59,7 +60,7 @@ Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks 
 - **The rolling summary is labelled "already told".** It was labelled "Summary" and the model retold it; relabelling cut repeated phrases from 8.8% to 2.2% in one run.
 - **Invented bracket notes are stripped.** Only `[PAUSE]`, `[SFX:]`, `[B-ROLL:]` and `[S#]` survive.
 - **gemma4:12b is the writing model.** In a same-brief test against the model it replaced it had better accuracy, fewer repeats and lower peak VRAM (10.7 GB), and more concrete prose, but it is 2-3x slower (407-695 s per 5-min script). Sentences run long at 14.8-14.9 words.
-- **Style flaws get one targeted rewrite.** After polish, the section with the most flaws (repeated phrases, more than one `[PAUSE]`, a past/present tense switch, banned phrases) is rewritten once, and the rewrite is kept only if it has fewer flaws. Every genre also gets shared rules (past tense throughout, one `[PAUSE]` per section at most). The outline step tries thinking once and then retries with thinking off, because thinking could use the whole token budget and return no JSON.
+- **Style flaws get one targeted rewrite.** After polish, the section with the most flaws (repeated phrases, more than one `[PAUSE]`, a past/present tense switch, banned phrases) is rewritten once, and the rewrite is kept only if it has fewer flaws. Every genre also gets shared rules (past tense throughout, a `[PAUSE]` limit per section), whose numbers come from `config.yaml` `style:`. The outline step tries thinking once and then retries with thinking off, because thinking could use the whole token budget and return no JSON.
 - **One sentence splitter.** Two checks once split sentences differently, so "J. Habakuk" counted as two sentences and a mid-sentence `[S1]` tag cut a claim in half before Verify judged it. All checks now share `text.sentences()`.
 - **Models:** gemma4:12b (writing) and BAAI/bge-m3 (embeddings). Models are not included; each has its own licence.
 
@@ -77,7 +78,7 @@ Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks 
 - Retrieval is judged on 17 briefs; script quality on the 3-brief check plus reading, not a user study.
 - Average sentence length is now about 13-15 words (target 10-15); gemma4 runs at the long end. Read aloud before recording.
 - The Verify step is strict: it can mark a true paraphrase as `INVENTED`, and the model still reuses atmosphere lines (a repeated-phrase rate of 4.3% showed up in one history run). The Checks section now lists crutch words (content words used far more often than natural prose), tense switches and `[PAUSE]` density, but only reports them.
-- History facts come from a small set of lore notes (6 topics). Fact-check every `{{INVENTED}}` mark and the
+- History facts come from a small set of lore notes (10 topics). Fact-check every `{{INVENTED}}` mark and the
   Checks section before publishing.
 - The books and scripts used as style data are **not** in this repository (see below).
 
@@ -123,7 +124,7 @@ Output goes to `output/<genre>-<min>min-<slug>.md`: titles (5), thumbnail text (
 - The narrator is always first person and the story always uses the 7 beats.
 
 ## Adding your material
-Drop files (`.txt .md .docx .pdf .epub .srt .vtt`) in `data/<genre>/` (e.g. `horror`, `history`, `fantasy`, `cthulhu`, or your own), then run `ingest`.
+Drop files (`.txt .md .docx .pdf .epub .srt .vtt`) in `data/<genre>/` (e.g. `horror`, `history`, `fantasy`, `cthulhu`, `sci-fi`, `literary`, or your own), then run `ingest`. Keep the original books outside `data/` (this project uses a gitignored `sources/` folder) and put only the cleaned text in `data/`; one file per story gives better style examples than one file per book.
 - Books: EPUB chapters are read in reading order; Project Gutenberg licence headers/footers, PDF page numbers and line-break hyphens are removed automatically (real compounds like mother-in-law are kept; if poppler's `pdftotext` is on PATH it is used, which also repairs books typeset with soft hyphens). Scanned PDFs (images) have no text and need OCR first.
 - **Past scripts** → style collection. Optional YAML front-matter: `subgenre, tone, pov, views, retention`. Missing tags are filled once by the LLM (cached by file hash).
 - **Lore/facts** → name the file `lore_*.md` (or front-matter `kind: lore`).
@@ -132,15 +133,15 @@ Drop files (`.txt .md .docx .pdf .epub .srt .vtt`) in `data/<genre>/` (e.g. `hor
 - Delete a file and the next `ingest` removes it from the index.
 
 ## Customising
-- `config.yaml`: model, `num_ctx`, retrieval sizes, reranker on/off (`reranker.enabled`), words per minute, the `length:` and `checks:` thresholds the README results were tuned with.
+- `config.yaml`: model, `num_ctx`, retrieval sizes, reranker on/off (`reranker.enabled`), words per minute, the `style:` targets (sentence length, `[PAUSE]` limit; filled into the prompts and the checks), and the `length:` and `checks:` thresholds the README results were tuned with.
 - `prompts/<genre>.md` genre rules; `prompts/stages/*.md` stage templates (placeholders look like `<<name>>`).
 - `banned_phrases.txt`: one phrase per line; used in the prompts and checked after generation (one rewrite attempt, then listed in Checks).
 - Swap model: `ollama pull mistral-nemo` then set `llm.model: mistral-nemo`. Models without thinking support are detected automatically.
 
 ## Fact-checking and quality checks
-Grounded genres take facts only from retrieved lore (`[S#]`); anything invented is wrapped as `{{INVENTED: …}}` and listed under Checks. After polishing, the **Verify step** asks the model YES/NO ("does the lore state this?", lore as sole evidence) for every cited sentence and every sentence that names something without a citation (at most 40 checks); each NO becomes `{{INVENTED}}`. This reduces but cannot eliminate invention, and paraphrases can be mis-marked: fact-check before publishing. The sample lore notes were written from memory, so verify them too.
+Grounded genres take facts only from retrieved lore (`[S#]`); anything invented is wrapped as `{{INVENTED: …}}` and listed under Checks. After polishing, the **Verify step** asks the model YES/NO ("does the lore state this?", lore as sole evidence) for every cited sentence and every sentence that names something without a citation (at most 40 checks); each NO becomes `{{INVENTED}}`. This reduces but cannot eliminate invention, and paraphrases can be mis-marked: fact-check before publishing. The lore notes are paraphrased from Wikipedia (each file's front matter names the source and the check date), so verify them too.
 
-Every output also reports word-count accuracy, repeated-phrase rate, banned-phrase hits, and passages with >80% 5-gram overlap with a source chunk.
+Every output also reports word-count accuracy, repeated-phrase rate, average sentence length, banned-phrase hits, passages with >80% 5-gram overlap with a source chunk, crutch words (content words used far more often than natural prose), past/present tense switches and `[PAUSE]` density. The last three only report; the weakest-section rewrite fixes tense, `[PAUSE]` and repeat problems automatically.
 
 ## Optional: parallel polish
 To polish 2 sections at once, set the Ollama server variable `OLLAMA_NUM_PARALLEL=2` (PowerShell: `[Environment]::SetEnvironmentVariable("OLLAMA_NUM_PARALLEL","2","User")`, then restart Ollama) **and** `llm.parallel: 2` in `config.yaml`. Polish went 18.7 s → 12.0 s (peak GPU 11.8 → 13.3 GB); 3 workers hit 14.8 GB, over budget. Undo with `SetEnvironmentVariable("OLLAMA_NUM_PARALLEL",$null,"User")`.
