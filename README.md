@@ -34,7 +34,7 @@ Measured on this machine (num_ctx 16384). Rows other than the fantasy row were m
 
 | Check | Result |
 |---|---|
-| Retrieval, 14 briefs (`cli.py eval --retrieval-only`) | right source at top 1: 0.90, top 3: 0.95, top 10: 0.95 |
+| Retrieval, 17 briefs (`cli.py eval --retrieval-only`) | right source at top 1: 0.87, top 3: 0.96, top 10: 0.96; 16 of 17 briefs hit (b10 misses) |
 | Three 5-min scripts (history / cthulhu / horror), target 750 words | 780 / 824 / 783 words, accuracy 96.0% / 90.1% / 95.6% |
 | Repeated 4-grams in those scripts | 4.2% / 0.7% / 4.4% |
 | Speed | about 4 min per 5-min script; generation is decode-bound at ~40 tokens/s |
