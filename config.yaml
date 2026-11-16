@@ -22,11 +22,6 @@ embedding:
   model: BAAI/bge-m3
   device: cpu
 
-reranker:
-  enabled: false
-  model: BAAI/bge-reranker-v2-m3
-  device: cpu
-
 retrieval:
   candidates: 30            # per retriever (dense, BM25) before fusion
   rrf_k: 60

@@ -26,15 +26,10 @@ def main():
     e.add_argument("--ids", help="comma-separated brief ids from eval/briefs.yaml, e.g. b01,b03 (default: all)")
     e.add_argument("--minutes", type=int, choices=DURATIONS, help="write every brief at this length instead of its own")
     e.add_argument("--label", help="copy the written scripts and a stats.json to output/<label>/")
-    e.add_argument("--compare-rerank", nargs="?", const="", metavar="MODEL",
-                   help="retrieval only: reranker off vs on (optionally another cross-encoder, e.g. "
-                        "cross-encoder/ms-marco-MiniLM-L-6-v2)")
     a = ap.parse_args()
 
     if a.cmd == "eval":
-        from eval.run_eval import compare_rerank, run
-        if a.compare_rerank is not None:
-            return compare_rerank(a.compare_rerank or None)
+        from eval.run_eval import run
         return run(retrieval_only=a.retrieval_only, ids=a.ids.split(",") if a.ids else None, minutes=a.minutes, label=a.label)
     pl = Pipeline.from_config()
     if a.cmd == "ingest":

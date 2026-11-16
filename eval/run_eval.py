@@ -5,7 +5,6 @@ import json
 import logging
 import shutil
 import statistics
-import time
 
 import yaml
 
@@ -35,26 +34,6 @@ def top_k(all_ranks):
     """Share of expected sources ranked within the top 1 / 3 / 10, over every brief's ranks()."""
     flat = [r for rk in all_ranks for r in rk.values()]
     return {f"top{x}": sum(r <= x for r in flat) / len(flat) for x in (1, 3, 10)}
-
-
-def rank_metrics(pl, briefs, k=10):
-    return top_k([ranks(pl, b, k) for b in briefs])
-
-
-def compare_rerank(model=None):
-    """Retrieval only: the same briefs with the reranker off and on, plus the time each pass took."""
-    pl, briefs = Pipeline.from_config(), load_briefs()
-    pl.cfg["reranker"]["model"] = model or pl.cfg["reranker"]["model"]
-    rank_metrics(pl, briefs[:1])  # load bge-m3 and build the BM25 indexes outside the timing
-    for on in (False, True):
-        pl.cfg["reranker"]["enabled"] = on
-        if on:
-            pl.ret.search("lore", "warm up the reranker", "history")  # load the reranker outside the timing
-        t0 = time.time()
-        m = rank_metrics(pl, briefs)
-        print(f"reranker {'ON ' if on else 'OFF'} ({pl.cfg['reranker']['model'] if on else '-'}): "
-              + "  ".join(f"{k}={v:.2f}" for k, v in m.items()) + f"  [{time.time() - t0:.1f}s for {len(briefs) * 3} searches]")
-
 
 def _over_limit(s):
     """Details over the return limit in one script: the same words coming back, or a detail in too many paragraphs."""

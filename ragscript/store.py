@@ -63,7 +63,7 @@ class Store:
     # ---- searching -----------------------------------------------------
     def dense(self, col, query, n, where=None):
         """Nearest chunks of one Chroma collection: [{id, text, meta, distance}]. The one place a query is embedded
-        and run, shared by the retriever and the HTTP service."""
+        and run, used by the retriever."""
         if col.count() == 0:
             return []
         r = col.query(query_embeddings=self.embed([query]), n_results=min(n, col.count()), where=where)
