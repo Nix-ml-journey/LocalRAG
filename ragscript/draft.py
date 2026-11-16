@@ -30,12 +30,18 @@ class Drafter:
                 examples += self.ret.search("hooks", q, genre.slug, beat="ending", k=k)
             lore = self.ret.search("lore", f"{story.brief} {q}", genre.slug, k=k)
             beat_txt = f"{b['beat']}: {b.get('title','')} - {b.get('summary','')}"
+            for key, label in (("place", "Where the narrator is for this whole beat"),
+                               ("sees", "What the narrator looks at from that place"),
+                               ("change", "What this beat adds that is new"),
+                               ("detail", "The one recurring detail to use here, and how it changes")):
+                if b.get(key):
+                    beat_txt += f"\n{label}: {b[key]}"
             if b["beat"] == "hook":
                 beat_txt += f"\nOpen with this chosen hook, polished and extended:\n{story.hook}"
             ledger.add_style(examples)  # so the >80% overlap check also covers style examples
             tail = ""
             if sections:
-                tail = ("\n\nEnd of the text written so far. Do NOT repeat its sentences, refrains or images; "
+                tail = ("\n\nEnd of the text written so far. Do NOT reuse its sentences or their wording; a recurring detail may return only if it has changed; "
                         "advance the story with new events:\n" + " ".join(sections[-1][1].split()[-120:]))
             vars_ = dict(brief=story.brief, genre_rules=genre.rules, narrator=story.narrator, outline=outline_txt,
                          beat=beat_txt, beat_words=b["words"], summary=summary + tail,

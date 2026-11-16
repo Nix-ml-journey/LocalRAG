@@ -47,9 +47,11 @@ def attempt(old, produce, accept):
 def _repeat_issues(text, earlier, ck):
     out = []
     if checks.repeated_rate(text, ck["repeated_ngram"]) > ck["section_repeat"]:
-        out.append(Issue("repeats", "it repeated its own paragraphs or refrains; mention each recurring detail at most once"))
+        out.append(Issue("repeats", "it repeated its own paragraphs or refrains; use each recurring detail at most 3 times in the story, changed each time"))
     if earlier and checks.overlap_flags(text, [earlier], 4, ck["earlier_overlap"]):
         out.append(Issue("retold", "it repeated earlier paragraphs; write only NEW events that move the story forward"))
+    if earlier and checks.drop_similar(text, earlier, ck["dedupe_similar"], ck["dedupe_similar_min"]).split() != text.split():  # words, not layout
+        out.append(Issue("similar", "it retells earlier paragraphs in new words; write only NEW events that move the story forward"))
     if checks.reused_quotes(text, earlier):
         out.append(Issue("quote", "it repeated a quotation already used earlier; quote each source only once"))
     return out
@@ -74,24 +76,15 @@ def draft_issues(text, earlier, cfg, banned, budget, grounded=False):
     return out + _banned_issues(text, banned)
 
 
-def final_issues(text, earlier, cfg, banned, skip=frozenset()):
+def final_issues(text, earlier, cfg, banned):
     """Reasons a finished section is worth rewriting (empty list = fine): the draft checks on repeats and banned
-    phrases, plus cue, tense, reused-line, returning-image and crowded-word problems."""
+    phrases, plus cue and tense problems."""
     ck, out = cfg["checks"], _repeat_issues(text, earlier, cfg["checks"]) + _banned_issues(text, banned)
     limit = cfg["style"]["max_pause_per_section"]
     if (pauses := text.count("[PAUSE]")) > limit:
         out.append(Issue("pause", f"it has {pauses} [PAUSE] cues; keep {limit} at most, right before a reveal", f"{pauses} cues"))
     if checks.mixed_tense(text, ck):
         out.append(Issue("tense", "it switches between past and present tense; rewrite everything in the past tense"))
-    if lines := checks.repeated_lines(text, earlier):
-        out.append(Issue("lines", "it reuses lines already written (" + " | ".join(lines[:3]) + "); write fresh lines instead",
-                         " | ".join(lines[:3])))
-    if images := checks.repeated_phrases(text, earlier, ck["phrase_repeat"]):
-        shown = ", ".join(f"{ph} x{n}" for ph, n in images[:3])
-        out.append(Issue("images", f"it brings back images already used earlier in the script ({shown}); replace them with fresh details", shown))
-    if crowded := checks.crowded_words(text, ck["word_repeat"], skip):
-        shown = ", ".join(f"{w} x{n}" for w, n in crowded[:3])
-        out.append(Issue("crowded", f"it leans on the words {shown}; vary the wording", shown))
     return out
 
 
@@ -111,7 +104,8 @@ class Refiner:
         stage("Polishing…")
         parts = self.polish(sections, story)
         stage("Revising weakest sections…")
-        parts = self.revise_weakest(parts, story)
+        parts = self.revise_weakest(parts, story, self.critique(parts, story))
+        parts = self.dedupe_parts(parts, story)  # before the fit, so the fit sees the real length and makes it up
         stage("Fitting length…")
         return self.fit_length(parts, [b["words"] for b, _ in sections], story)
 
@@ -138,24 +132,42 @@ class Refiner:
         for (b, _), (_, kept) in zip(sections, results):
             if not kept:
                 story.notes.append(f"Polish of '{b['beat']}' rejected (length/repetition); draft kept.")
-        parts, earlier = [], ""
-        for p, _ in results:  # dedupe section by section so the structure survives for the length fit
-            d = checks.dedupe(p, ck, earlier) or p
-            if d != p:
-                story.notes.append("Removed paragraphs that repeated earlier ones.")
-            parts.append(d)
-            earlier += "\n\n" + d
-        return parts
+        return [p for p, _ in results]
 
-    def revise_weakest(self, parts, story):
+    def dedupe_parts(self, parts, story):
+        """Run the repeat guard over the finished sections in order, each against the text before it. A section that
+        only retells earlier text becomes empty (the length fit then makes the loss up); every removal is noted."""
+        ck, out, earlier = self.cfg["checks"], [], ""
+        for p in parts:
+            d = checks.dedupe(p, ck, earlier)
+            if (removed := checks.spoken_count(p) - checks.spoken_count(d)) > 0:  # re-flowed lines alone are no removal
+                story.notes.append(f"Repeat guard removed {removed} words that retold earlier text.")
+            out.append(d)
+            earlier += "\n\n" + d
+        return out
+
+    def critique(self, parts, story):
+        """One model call that reads the whole script and names logic holes: {section index: [Issue("logic", ...)]}.
+        Empty when the model finds none or answers off format."""
+        numbered = "\n\n".join(f"[{i + 1}]\n{p}" for i, p in enumerate(parts))
+        reply = self.ask("critic", dict(narrator=story.narrator, outline=story.outline, text=numbered),
+                         temperature=0.2, max_tokens=300)
+        out = {}
+        for m in re.finditer(r"(?m)^\s*\[?(\d+)\]?\s*[:.)-]\s*(\S.*)$", reply):
+            i = int(m.group(1)) - 1
+            if 0 <= i < len(parts) and len(out.get(i, [])) < 2:
+                out.setdefault(i, []).append(Issue("logic", m.group(2).strip()))
+        return out
+
+    def revise_weakest(self, parts, story, logic=None):
         """Rewrite the sections with the most issues, worst first, at most `checks.revise_sections` of them. Each is
         judged against the text before it as it is now; a rewrite is kept only if it has fewer issues and stays near
         its length."""
-        ln, tried, skip = self.cfg["length"], set(), checks.topic_words(story.brief)
+        ln, tried = self.cfg["length"], set()
         for _ in range(self.cfg["checks"]["revise_sections"]):
             earlier, issues = "", []
             for p in parts:
-                issues.append(final_issues(p, earlier, self.cfg, self.banned, skip))
+                issues.append(final_issues(p, earlier, self.cfg, self.banned) + (logic or {}).get(len(issues), []))
                 earlier += "\n\n" + p
             i = max((j for j in range(len(parts)) if j not in tried), key=lambda j: len(issues[j]), default=None)
             if i is None or not issues[i]:
@@ -168,7 +180,7 @@ class Refiner:
                                                 problems="\n".join("- " + x.message for x in issues[i]), target_words=before),
                                  temperature=0.5, max_tokens=int(before * 2.2)),
                 lambda n: (ln["polish_min"] * before <= checks.spoken_count(n) <= ln["polish_max"] * before
-                           and len(final_issues(n, earlier, self.cfg, self.banned, skip)) < len(issues[i])))
+                           and len(final_issues(n, earlier, self.cfg, self.banned)) < len(issues[i])))
             if kept:
                 story.notes.append(f"Revised section {i + 1} to fix: {_note(issues[i])}.")
                 parts = parts[:i] + [new] + parts[i + 1:]
@@ -188,7 +200,7 @@ class Refiner:
             if (1 - tol) * total <= n <= (1 + tol) * total:
                 break
             sign = 1 if n > total else -1
-            i = max((j for j in range(len(parts)) if j not in tried), default=None,
+            i = max((j for j in range(len(parts)) if j not in tried and words[j]), default=None,
                     key=lambda j: sign * (words[j] - budgets[j]))
             if i is None:
                 break

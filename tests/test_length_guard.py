@@ -78,3 +78,40 @@ def test_on_target_script_makes_no_extra_calls(tmp_path):
     llm = LengthLLM(section_words=107)  # 749 words
     run(tmp_path, llm)
     assert llm.fit_calls == 0
+
+
+def long_words(start, n):
+    """n distinct 7-letter words in sentences of 10 (content words, unlike the 3-letter pseudo words)."""
+    w = [x + "ings" for x in POOL[start:start + n]]
+    return " ".join(". ".join(" ".join(w[i:i + 10]) for i in range(0, n, 10)).split()) + "."
+
+
+def reverse_sentences(text):
+    """The same words in reverse order within each sentence: no shared 4-gram, but the same content words."""
+    return ". ".join(" ".join(reversed(s.rstrip(".").split())) for s in text.split(". ")) + "."
+
+
+class RetoldLLM(LengthLLM):
+    """The second section retells the first in different word order, on the retry as well."""
+
+    def chat(self, prompt, **kw):
+        if kw.get("stage") == "section":
+            if "Previous attempt:" in prompt:
+                return self.written[-1]  # the model does not fix it
+            k = len(self.written)
+            text = reverse_sentences(self.written[0]) if k == 1 else long_words(k * 400, self.section_words)
+            self.written.append(text)
+            return text
+        return super().chat(prompt, **kw)
+
+
+def test_a_retold_section_is_dropped_before_the_fit_which_makes_up_the_length(tmp_path):
+    from ragscript import config
+    llm = RetoldLLM(section_words=110)  # 7 x 110 = 770 words; without the retelling 660, below the 675 floor
+    md = write_script(make_pipeline(tmp_path, llm))["markdown"]
+    script = script_of(md)
+    n = checks.spoken_count(script)
+    assert 675 <= n <= 825, n  # the fit ran after the repeat guard and made the loss up
+    assert llm.fit_calls >= 1
+    assert checks.drop_similar(script, "", CK["dedupe_similar"], CK["dedupe_similar_min"]) == script
+    assert "Repeat guard removed" in md and "Final repeat guard removed" not in md  # nothing was cut after the fit

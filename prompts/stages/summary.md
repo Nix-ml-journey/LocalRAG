@@ -10,6 +10,6 @@ Write an updated summary of the story so far, under 150 words, past tense. Inclu
 - what has happened, in order
 - narrator details established (name, age, job, voice, recurring sensory details)
 - open threads and unanswered questions
-- any quotation, refrain or signature image already used (so the next section does not reuse it)
+- any quotation, refrain or signature image already used, how many times, and how it sounded or felt last time (so the next section can bring it back changed, or leave it out once it has returned 3 times)
 
 Output only the summary.

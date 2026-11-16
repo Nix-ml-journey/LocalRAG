@@ -52,8 +52,10 @@ def render(doc: Doc, script, report) -> str:
          f"- Average sentence length: {r.avg_sentence_words} words (natural narration is about {r.sentence_range})"]
     if r.overused_words:
         L.append("- Words used often (crutch words, consider varying): " + ", ".join(f"{w} ×{n}" for w, n in r.overused_words))
-    if r.repeated_images:
-        L.append("- Images returning through the script (consider cutting repeats): " + ", ".join(f"{p} ×{n}" for p, n in r.repeated_images))
+    if r.repeated_wording:
+        L.append("- Details returning in the same words (fine when few; vary them): " + ", ".join(f"\"{p}\" ×{n}" for p, n in r.repeated_wording))
+    if r.detail_returns:
+        L.append("- Outline details and the paragraphs that bring them back: " + ", ".join(f"{n} x{c}" for n, c in r.detail_returns))
     L += [f"- {f}" for f in r.flags]
     if r.overlap_flags:
         L += ["- **>80% overlap with a source (rewrite these):**"] + [f"  - ({x}) {p}…" for p, x in r.overlap_flags]

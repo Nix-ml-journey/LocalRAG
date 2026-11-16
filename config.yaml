@@ -14,7 +14,7 @@ llm:
   min_ctx: 4096             # OOM retry halves num_ctx down to this
   temperature: 0.8
   repeat_penalty: 1.1       # curbs the looping small models fall into on long prose
-  think_outline: true       # thinking only for the outline stage; off elsewhere
+  think_outline: false      # thinking was used up on the token budget with no JSON (185 s lost in a run); the outline retry already runs without it
   keep_alive: 10m
   parallel: 1               # polish calls in flight at once; raise only together with OLLAMA_NUM_PARALLEL (see README)
 
@@ -51,9 +51,7 @@ checks:
   repeated_ngram: 4         # repeated-phrase rate uses this n
   section_repeat: 0.08      # a section draft is rewritten when more than this share of its 4-grams repeat
   earlier_overlap: 0.6      # ... or when more than this share of a paragraph's 4-grams were already written
-  phrase_repeat: 4          # ... an image (two content words, e.g. smell + ozone) used this often in the script: the narrator's recurring details are allowed 3
-  word_repeat: 3            # the weakest-section rewrite flags a content word used this often in one section
-  revise_sections: 2        # ... and rewrites at most this many sections, worst first
+  revise_sections: 1        # ... the weakest-section rewrite fixes this many sections, worst first
   dedupe_ngram: 4           # the repeat guard compares 4-grams of paragraphs and sentences
   dedupe_paragraph: 0.6     # ... drops a paragraph when more than this share of its n-grams was already written
   dedupe_similar: 0.5       # ... or a paragraph that retells an earlier one in new words: this share of its content words are shared
@@ -63,6 +61,7 @@ checks:
   polish_repeat_slack: 0.05 # a polished section is rejected if its repeated-phrase rate rose by more than this
   tense_floor: 3            # a narrator switched tense when both tenses appear this often ...
   tense_share: 0.2          # ... and the rarer one is this share of all first-person verbs
+  motif_max: 3              # a detail may return this often in the script; more is flagged (the same wording twice is listed)
   crowd_min: 5              # a crutch word (5+ letters) is used this often in the script ...
   crowd_share: 0.006        # ... and makes up more than this share of all words
 
@@ -71,5 +70,5 @@ length:                     # tuned against the README results; change one at a 
   draft_max: 1.5
   token_cap: 1.8            # generation cap: tokens per budgeted word (models write 3-5x small budgets)
   polish_min: 0.7           # a polished section is accepted between polish_min and polish_max x its target
-  polish_max: 1.35
-  fit_tolerance: 0.1        # the whole script is rewritten until within +/- this share of the target
+  polish_max: 1.15
+  fit_tolerance: 0.05       # the whole script is rewritten until within +/- this share of the target (0.1 let 823 words pass for a 750 target)

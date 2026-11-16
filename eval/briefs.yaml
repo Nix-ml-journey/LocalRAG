@@ -1,85 +1,87 @@
+# Each brief: who tells the story, where, the one strange or central event, and what is at stake.
+# Keep the wording stable between runs: README results compare scripts written from these exact briefs.
 - id: b01
   genre: horror
   minutes: 10
-  brief: A night security guard at an empty parking garage keeps receiving tickets from a machine that prints them by itself.
+  brief: A night security guard at an empty parking garage keeps receiving tickets from a machine that prints them by itself. Each ticket carries a time a little later than the last, and he fears what happens when the clock on the ticket reaches the present.
   expect_sources: [horror_night_shift]
 - id: b02
   genre: horror
   minutes: 5
-  brief: A lighthouse keeper realizes someone else has been writing in the logbook and walking the stairs behind him.
+  brief: A lighthouse keeper realizes someone else has been writing in the logbook and walking the stairs behind him. The handwriting is neat, the entries are accurate, and the last one describes tonight before it has happened.
   expect_sources: [horror_lighthouse_log]
 - id: b03
   genre: history
   minutes: 15
-  brief: A researcher investigates why the Mary Celeste was found drifting with nobody aboard in 1872.
+  brief: A researcher investigates why the Mary Celeste was found drifting with nobody aboard in 1872. She weighs the main explanations against the ship's log, the cargo and the missing lifeboat, and says which ones the evidence cannot support.
   expect_sources: [lore_mary_celeste, history_mary_celeste_archive]
 - id: b04
   genre: history
   minutes: 10
-  brief: A visitor to Roanoke Island reflects on the vanished colony and the word carved on a post.
+  brief: A visitor to Roanoke Island reflects on the vanished colony and the word carved on a post. Standing where the settlement stood, he asks what the carving meant and what the colonists left behind.
   expect_sources: [lore_roanoke, history_roanoke_visit]
 - id: b05
   genre: history
   minutes: 20
-  brief: Compare the Mary Celeste and the Roanoke colony as two famous unsolved disappearances, from the view of an archivist.
+  brief: Compare the Mary Celeste and the Roanoke colony as two famous unsolved disappearances, from the view of an archivist. She sets the two side by side, what was found, what was missing and what each one still cannot explain.
   expect_sources: [lore_mary_celeste, lore_roanoke]
 - id: b06
   genre: fantasy
   minutes: 10
-  brief: A marsh warden guides a nervous clerk across tidal flats and finds a light that should not be there.
+  brief: A marsh warden guides a nervous clerk across tidal flats and finds a light that should not be there. The tide is turning, the clerk wants to follow the light, and the warden knows what happened to the last person who did.
   expect_sources: [lore_saltmarch, fantasy_salt_warden]
 - id: b07
   genre: fantasy
   minutes: 15
-  brief: An aging mapmaker is hired to draw a road that rewrites itself, and learns what each true line costs him.
+  brief: An aging mapmaker is hired to draw a road that rewrites itself, and learns what each true line costs him. Every line he gets right takes something from his own memory, and he must decide how much of his life the road is worth.
   expect_sources: [fantasy_ember_cartographer]
 - id: b08
   genre: cthulhu
   minutes: 10
-  brief: A 1920s ocean surveyor plots odd soundings that form the outline of a drowned city.
+  brief: A 1920s ocean surveyor plots odd soundings that form the outline of a drowned city. His crew wants to turn back, the soundings keep growing more regular, and the shape on his chart begins to look like streets.
   expect_sources: [cthulhu_survey_log, lore_call_of_cthulhu]
 - id: b09
   genre: cthulhu
   minutes: 5
-  brief: A library cataloguer receives a box of letters whose last page should never be read.
+  brief: A library cataloguer receives a box of letters whose last page should never be read. The earlier readers of the letters all wrote notes in the margins, and the notes get more frightened with each reader.
   expect_sources: [cthulhu_archive_letters]
 - id: b10
   genre: horror
   minutes: 20
-  brief: A man discovers that his own handwriting appears in letters he never wrote, dated decades before he was born.
+  brief: A man discovers that his own handwriting appears in letters he never wrote, dated decades before he was born. He traces the letters to an old address and finds that someone there has been answering them.
   expect_sources: [hooks_openers, horror_lighthouse_log]
 - id: b11
   genre: history
   minutes: 10
-  brief: A lighthouse inspector investigates why three keepers vanished from the Flannan Isles in December 1900 and left the door closed behind them.
+  brief: A lighthouse inspector investigates why three keepers vanished from the Flannan Isles in December 1900 and left the door closed behind them. He reads the log, the last relief visit and the state of the lighthouse, and separates what was recorded from what was only rumored.
   expect_sources: [lore_flannan_isles]
 - id: b12
   genre: history
   minutes: 15
-  brief: A mountaineering historian retraces the last camp of nine hikers on Kholat Syakhl in the Ural Mountains in 1959.
+  brief: A mountaineering historian retraces the last camp of nine hikers on Kholat Syakhl in the Ural Mountains in 1959. She walks through the tent, the footprints and the search report, and says which explanations the evidence supports and which it does not.
   expect_sources: [lore_dyatlov_pass]
 - id: b13
   genre: history
   minutes: 15
-  brief: An Arctic archivist studies the note found at Victory Point and what happened to the crews of Erebus and Terror.
+  brief: An Arctic archivist studies the note found at Victory Point and what happened to the crews of Erebus and Terror. She reads what the note says, what it leaves out, and what the later searches found along the route.
   expect_sources: [lore_franklin_expedition]
 - id: b14
   genre: history
   minutes: 10
-  brief: A city clerk in Strasbourg records the summer of 1518 when people danced in the streets for days.
+  brief: A city clerk in Strasbourg records the summer of 1518 when people danced in the streets for days. He writes down who danced, what the council tried, and what he saw in the square.
   expect_sources: [lore_dancing_plague_1518]
 - id: b15
   genre: sci-fi
   minutes: 5
-  brief: A courier delivers a parcel to an address that was demolished years ago, yet the recipient signs for it.
+  brief: A courier delivers a parcel to an address that was demolished years ago, yet the recipient signs for it. The signature matches his own, and the parcel holds something he has not yet lost.
   expect_sources: [dick_Ubik]
 - id: b16
   genre: horror
   minutes: 10
-  brief: A guest in a country house tower room realises the previous occupant's dream is repeating in his own sleep.
+  brief: A guest in a country house tower room realises the previous occupant's dream is repeating in his own sleep. Each night the dream goes a little further, and he learns how it ended for the man before him.
   expect_sources: [benson_The_Room_in_the_Tower]
 - id: b17
   genre: literary
   minutes: 10
-  brief: A widow keeps setting a second place at the table and the neighbours slowly start to ask why.
+  brief: A widow keeps setting a second place at the table and the neighbours slowly start to ask why. She explains nothing at first, and the reason comes out through small daily habits rather than speeches.
   expect_sources: [literary]

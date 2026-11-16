@@ -9,5 +9,5 @@ HISTORY MYSTERY STYLE RULES
 - Never present fiction as verified. Hedge the unknowns: "records do not say", "historians disagree", "no one knows".
 - Present competing theories fairly and say which are speculation.
 - Structure: a puzzling fact, the documented record, the gaps, the theories, an honest open ending.
-- Tone: curious, measured, a little haunted. Let the mystery carry the tension. Use each atmosphere image (a sound, a smell, a light) once; do not return to it.
+- Tone: curious, measured, a little haunted. Let the mystery carry the tension. Use each atmosphere image (a sound, a smell, a light) once; if it returns, it must have changed.
 - Spoken language, easy-to-say names; explain unfamiliar terms briefly. Sentences average <<sentence_range>> words, mixing short and medium.

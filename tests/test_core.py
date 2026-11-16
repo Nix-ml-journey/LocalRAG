@@ -107,7 +107,7 @@ def test_render_script_is_clean_and_annotated_copy_is_last():
     from ragscript import render, report
     rep = report.Report(words=10, target_words=10, word_accuracy=1.0, repeated_phrase_rate=0.0, avg_sentence_words=5.0,
                         sentence_range="10-15", overlap_flags=[], banned_hits=[], invented=["x"], unsupported_cites=[],
-                        uncited_facts=[], pause_cues=0, minutes=5, mixed_tense=False, overused_words=[])
+                        uncited_facts=[], pause_cues=0, minutes=5, mixed_tense=False, overused_words=[], repeated_wording=[], motif_limit=3)
     doc = render.Doc("b", "history", 5, "n", {}, [(0, "c")], {})
     md = render.render(doc, "Fact one [S1]. {{INVENTED: a smell}}.", rep)
     main = md[md.index("## Script"): md.index("## Chapters")]

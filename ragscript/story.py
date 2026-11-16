@@ -11,3 +11,4 @@ class Story:
     minutes: int
     hook: str = ""         # the hook the user picked
     notes: list = field(default_factory=list)  # remarks for the Checks section, added by any stage
+    outline: str = ""      # the outline as numbered text, for stages that judge the whole script

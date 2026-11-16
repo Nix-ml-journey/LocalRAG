@@ -23,16 +23,18 @@ class Report:
     minutes: int
     mixed_tense: bool
     overused_words: list
-    repeated_images: list = field(default_factory=list)  # [(phrase, count)] returning through the script
+    repeated_wording: list          # [(phrase, times)] details that came back in the same words
+    motif_limit: int                # the most times one detail may return (config checks.motif_max)
     flags: list = field(default_factory=list)            # warnings the Report itself decided on
     notes: list = field(default_factory=list)
+    detail_returns: list = field(default_factory=list)   # [(detail, paragraphs)] how often each outline detail came back
 
     @property
     def pauses_per_minute(self) -> float:
         return self.pause_cues / self.minutes
 
 
-def build(script, *, target_words, minutes, refs, cited_text, grounded, banned, cfg, notes, brief="") -> Report:
+def build(script, *, target_words, minutes, refs, cited_text, grounded, banned, cfg, notes, brief="", details=()) -> Report:
     """Measure `script`. refs: every source chunk text shown to the model; cited_text: {S number: chunk text};
     the two fact checks only run for grounded genres."""
     ck = cfg["checks"]
@@ -50,9 +52,14 @@ def build(script, *, target_words, minutes, refs, cited_text, grounded, banned, 
         uncited_facts=grounding.uncited_facts(script) if grounded else [],
         pause_cues=script.count("[PAUSE]"), minutes=minutes,
         mixed_tense=checks.mixed_tense(script, ck), overused_words=checks.overused_words(script, ck, skip=checks.topic_words(brief)),
-        repeated_images=checks.crowded_phrases(script, ck["phrase_repeat"]), notes=notes)
+        repeated_wording=checks.repeated_wording(script), motif_limit=ck["motif_max"], notes=notes,
+        detail_returns=checks.detail_returns(script, details))
     if r.mixed_tense:
         r.flags.append("**Tense switches between past and present in the narration (check before recording).**")
+    if over := [p for p, n in r.repeated_wording if n > r.motif_limit]:
+        r.flags.append(f"A detail returned in the same words more than {r.motif_limit} times: " + "; ".join(over))
+    if over := [f"{n} ({c})" for n, c in r.detail_returns if c > r.motif_limit]:
+        r.flags.append(f"A recurring detail came back in more than {r.motif_limit} paragraphs: " + "; ".join(over))
     limit = cfg["style"]["max_pauses_per_minute"]
     if r.pauses_per_minute > limit:
         r.flags.append(f"{r.pause_cues} [PAUSE] cues in {minutes} minutes: more than {limit} a minute reads as halting")

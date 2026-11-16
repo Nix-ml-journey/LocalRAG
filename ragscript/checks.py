@@ -99,6 +99,75 @@ def dedupe(text, ck, earlier=""):
     return drop_repeat_sentences(text, earlier, n, ck["dedupe_sentence"], ck["dedupe_min_words"])
 
 
+def repeated_wording(text, n=5, top=5):
+    """Details that return in the same words: [(phrase, times)], most frequent first. A phrase is a run of repeated
+    n-grams (with at least 2 content words, so "i was in the" never counts); times is how often its opening n-gram
+    starts a run. A recurring detail is fine when it changes; this lists the ones that came back unchanged."""
+    w = words(unmark(text))
+    grams = [tuple(w[i:i + n]) for i in range(len(w) - n + 1)]
+    c = Counter(grams)
+    runs, i = {}, 0
+    while i < len(grams):
+        if c[grams[i]] < 2 or sum(x not in _FUNC and len(x) >= 4 for x in grams[i]) < 2:
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(grams) and c[grams[j + 1]] > 1:
+            j += 1
+        run = w[i:j + n]
+        key = grams[i]
+        if key not in runs or len(run) > len(runs[key][0]):
+            runs[key] = (run, runs.get(key, (0, 0))[1] + 1)
+        else:
+            runs[key] = (runs[key][0], runs[key][1] + 1)
+        i = j + 1
+    out = [(" ".join(r), k) for r, k in runs.values() if k > 1]
+    return sorted(out, key=lambda x: -x[1])[:top]
+
+
+def outline_issues(beats, limit):
+    """Logic holes in an outline (empty list = fine). Each beat should say where the narrator is (`place`), what new
+    thing happens (`change`) and which recurring detail it uses (`detail`, written "name: how it changes"). A beat with
+    no place or change, a change that nearly repeats the beat before, a detail used in two beats in a row, or one used
+    in more than `limit` beats is a hole."""
+    out, uses, prev, prev_detail = [], Counter(), None, ""
+    for i, b in enumerate(beats, 1):
+        tag = f"beat {i} ({b['beat']})"
+        for k in ("place", "change"):
+            if not str(b.get(k, "")).strip():
+                out.append(f'{tag} has no "{k}"')
+        if re.search(r"\b(monitors?|screens?|cameras?|feed|footage)\b", str(b.get("summary", "")), re.I) and not str(b.get("sees", "")).strip():
+            out.append(f'{tag} shows a screen or camera but has no "sees" saying what it shows')
+        ch = _content_set(str(b.get("change", "")))
+        if prev and min(len(ch), len(prev)) >= 3 and len(ch & prev) / min(len(ch), len(prev)) >= 0.6:
+            out.append(f"{tag} changes almost the same thing as the beat before it")
+        prev = ch
+        name = str(b.get("detail", "")).split(":")[0].strip().lower()
+        if name:
+            uses[name] += 1
+            if name == prev_detail:
+                out.append(f'{tag} uses the detail "{name}" again right after the beat before')
+        prev_detail = name
+    out += [f'the detail "{n}" is used in {c} beats; at most {limit}' for n, c in uses.items() if c > limit]
+    return out
+
+
+_ARTICLES = {"the", "and", "his", "her", "its", "for", "our", "their"}
+
+
+def detail_returns(text, names):
+    """How many paragraphs of the script bring back each named recurring detail: [(name, paragraphs)], most first. A
+    paragraph counts when it holds at least half of the name's content words, so "smell of ozone" and "ozone" meet."""
+    paras = [set(words(unmark(p))) for p in re.split(r"\n\s*\n", text)]
+    out = {}
+    for name in names:
+        key = [w for w in words(name) if len(w) >= 3 and w not in _FUNC and w not in _ARTICLES]
+        if key and name not in out:
+            need = (len(key) + 1) // 2
+            out[name] = sum(sum(w in p for w in key) >= need for p in paras)
+    return sorted(((n, c) for n, c in out.items() if c), key=lambda x: -x[1])
+
+
 def avg_sentence_words(text) -> float:
     """Average spoken words per sentence (cues and INVENTED markers ignored). Natural narration sits near 10-15;
     below ~7 it sounds like a string of fragments, above ~20 it reads like a book."""
@@ -166,47 +235,6 @@ def overused_words(text, ck, top=5, skip=frozenset()):
     found = [(k, v) for k, v in content_counts(text, skip).most_common(top * 3)
              if v >= ck["crowd_min"] and v / total >= ck["crowd_share"]]
     return found[:top]
-
-
-def crowded_words(text, limit, skip=frozenset()):
-    """[(word, count)] for content words used `limit` or more times in one stretch of text (one section)."""
-    return [(w, n) for w, n in content_counts(text, skip).most_common() if n >= limit]
-
-
-def _pairs(text):
-    """Counter of pairs of consecutive content words (function words skipped, one sentence at a time):
-    "the smell of ozone" and "smell like ozone" both count as ("smell", "ozone")."""
-    c = Counter()
-    for s in sentences(unmark(text)):
-        cw = [w for w in words(s) if len(w) >= 4 and w not in _FUNC]
-        c.update(zip(cw, cw[1:]))
-    return c
-
-
-def crowded_phrases(text, min_count, top=5):
-    """[(phrase, count)] for the images (two content words) that return `min_count`+ times in the text."""
-    return [(" ".join(k), v) for k, v in _pairs(text).most_common(top * 2) if v >= min_count][:top]
-
-
-def repeated_phrases(text, earlier, min_count):
-    """[(phrase, total)] for images in `text` that were already used in `earlier` and, counting both, appear
-    `min_count`+ times: the sensory anchors a small model brings back in every section."""
-    before, now = _pairs(earlier), _pairs(text)
-    return [(" ".join(k), before[k] + v) for k, v in now.items() if before[k] and before[k] + v >= min_count]
-
-
-def repeated_lines(text, earlier="", min_words=2):
-    """Sentences of `min_words`+ words that already appear word for word in `earlier` or earlier in `text`: the
-    short refrains ("It was watching me back.") the 4-gram repeat guards cannot see."""
-    seen = {tuple(words(s)) for s in sentences(earlier) if len(words(s)) >= min_words}
-    out = []
-    for s in sentences(text):
-        w = tuple(words(s))
-        if len(w) >= min_words:
-            if w in seen:
-                out.append(s.strip())
-            seen.add(w)
-    return out
 
 
 def banned_hits(text, phrases):

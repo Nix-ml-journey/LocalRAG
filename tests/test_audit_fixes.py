@@ -39,7 +39,8 @@ def test_outline_with_loose_beat_names_and_bad_words_is_fixed_or_retried(tmp_pat
                 self.outlines += 1
                 names = [b.title().replace("_", " ") for b in BEATS]  # "Hook", "Rising Tension"...
                 words = "about 100" if self.outlines == 1 else 107
-                beats = [{"beat": n, "title": n, "words": words, "summary": "s"} for n in names]
+                beats = [{"beat": n, "title": n, "words": words, "summary": "s", "place": f"room {i}", "change": f"new event {i * 11} {'ab cd ef gh ij kl mn'.split()[i]} xyz", "detail": ""}
+                     for i, n in enumerate(names)]
                 return json.dumps({"narrator": "Eli", "beats": beats})
             if kw.get("stage") == "section":
                 self.section_prompts.append(prompt)
@@ -135,7 +136,9 @@ def test_outline_retries_with_thinking_off_when_thinking_returns_no_json(tmp_pat
             return super().chat(prompt, **kw)
 
     llm = L()
-    write(pipeline(tmp_path, llm))
+    pl = pipeline(tmp_path, llm)
+    pl.cfg["llm"]["think_outline"] = True  # off by default; this is the path for anyone who turns it on
+    write(pl)
     assert llm.think_flags[0] is True and llm.think_flags[1:] == [False], "one thinking attempt, then plain ones"
 
 
@@ -200,36 +203,6 @@ def test_draft_and_final_issues_judge_the_two_stages_with_named_entry_points():
     assert [i.kind for i in final_issues("A fine line.", "", cfg, ["fine line"])] == ["banned"]
 
 
-def test_final_issues_flag_reused_lines_and_crowded_words_and_drafts_do_not():
-    from ragscript.refine import draft_issues, final_issues
-    cfg = config.load()
-    earlier = "It was watching me back."
-    text = "The metal door was cold. It was watching me back. I touched the metal frame, then the metal latch."
-    assert not draft_issues(text, earlier, cfg, [], budget=len(text.split()))  # drafts are not judged on this
-    issues = {i.kind: i for i in final_issues(text, earlier, cfg, [])}
-    assert "lines" in issues and "metal x3" in issues["crowded"].detail
-
-
-def test_images_that_return_through_the_script_are_found_across_word_forms():
-    text = ("The smell of ozone hung in the hall. I heard the clink of my keys. Smell of ozone filled the vault. "
-            "The clink of my keys followed me. A smell like ozone stung my nose.")
-    assert checks.crowded_phrases(text, 3) == [("smell ozone", 3)]  # "clink keys" is only twice
-    earlier = "The smell of ozone hung in the hall. The smell of ozone grew."
-    assert checks.repeated_phrases("I breathed the smell of ozone again.", earlier, 3) == [("smell ozone", 3)]
-    assert checks.repeated_phrases("I breathed fresh sea air.", earlier, 3) == []
-    assert checks.repeated_phrases("The smell of ozone first appeared here.", "", 3) == []  # a first use is never flagged
-
-
-def test_rewrite_pass_asks_for_fresh_details_when_an_image_keeps_returning():
-    from ragscript.refine import draft_issues, final_issues
-    cfg = config.load()
-    earlier = "The smell of ozone hung in the hall. The smell of ozone grew. The smell of ozone stayed."
-    line = "I caught the smell of ozone once more."
-    issues = {i.kind: i for i in final_issues(line, earlier, cfg, [])}
-    assert "images already used" in issues["images"].message and "smell ozone" in issues["images"].detail
-    assert not draft_issues(line, earlier, cfg, [], budget=8)  # drafts are not judged on it
-
-
 def test_interrupted_ingest_keeps_the_progress_of_the_files_already_done(tmp_path, monkeypatch):
     import json as _json
     import pytest
@@ -284,15 +257,6 @@ def test_a_value_that_looks_like_a_placeholder_is_inserted_as_it_is():
     out = prompts.stage(config.load(), "revise", ["bad phrase"], text="the lore says <<banned>> here", narrator="n",
                         genre_rules="g", problems="p", target_words=5)
     assert out.count("<<banned>>") == 1 and "bad phrase" in out  # the template's own placeholder was filled
-
-
-def test_short_refrains_repeated_across_sections_are_caught():
-    earlier = "The monitor hummed. [PAUSE] It was watching me back."
-    text = "I froze in the hall. [PAUSE] It was watching me back. Then it smiled. Then it smiled."
-    assert checks.repeated_lines(text, earlier) == ["It was watching me back.", "Then it smiled."]
-    assert checks.repeated_lines("A new line here.", earlier) == []
-    assert checks.crowded_words("The heavy door was heavy and the heavy latch stuck.", 3) == [("heavy", 3)]
-    assert checks.crowded_words("A heavy door and a light latch.", 3) == []
 
 
 def test_revision_pass_fixes_up_to_the_configured_number_of_sections():
@@ -400,6 +364,90 @@ def test_words_the_brief_itself_uses_are_not_crutch_words():
     brief = "A night-shift security guard keeps seeing himself on the monitors"
     skip = checks.topic_words(brief)
     assert "monitor" in skip and "guard" in skip
-    text = "The monitor flickered. A monitor hissed. I stared at the monitor, then the heavy door, the heavy latch, the heavy lock."
-    assert checks.crowded_words(text, 3) == [("monitor", 3), ("heavy", 3)]
-    assert checks.crowded_words(text, 3, skip) == [("heavy", 3)]  # the topic noun is ignored, the real crutch is not
+    text = " ".join(["The monitor flickered and the monitor hissed over the heavy door and the heavy latch."] * 3)
+    assert [w for w, _ in checks.overused_words(text, CK)] == ["monitor", "heavy"]
+    assert [w for w, _ in checks.overused_words(text, CK, skip=skip)] == ["heavy"]  # the topic noun is ignored
+
+
+def test_a_section_retelling_earlier_text_in_new_words_is_an_issue_and_dedupe_parts_empties_it():
+    from ragscript import genre
+    from ragscript.refine import Refiner, draft_issues
+    cfg = config.load()
+    first = ("I checked every monitor in the booth to see if the lag was a local glitch. Each screen showed a different "
+             "wing of the warehouse, but the delay remained consistent across every feed. The steady hum of the HVAC "
+             "filled the room while I waited for a flicker.")
+    retold = ("I scanned each monitor row to see if the lag affected just one specific camera feed. Every display "
+              "showed a different wing of the warehouse, yet the timing stayed consistent across all feeds. The "
+              "steady hum of the HVAC filled the booth while I waited for a glitch.")
+    assert "similar" in [i.kind for i in draft_issues(retold, first, cfg, [], budget=len(retold.split()))]
+    story = Story("b", genre.load(cfg, "horror"), "Eli", 750, 5)
+    out = Refiner(lambda *a, **k: "", cfg, []).dedupe_parts([first, retold], story)
+    assert out == [first, ""] and "Repeat guard removed" in story.notes[0]
+
+
+def test_the_repeat_guard_only_notes_removals_not_re_flowed_lines():
+    from ragscript import genre
+    from ragscript.refine import Refiner
+    cfg = config.load()
+    story = Story("b", genre.load(cfg, "horror"), "Eli", 750, 5)
+    lined = "I walked in and looked around the long hall.\nThen I heard a sound from the cellar below the stairs."
+    out = Refiner(lambda *a, **k: "", cfg, []).dedupe_parts([lined], story)
+    assert checks.spoken_count(out[0]) == checks.spoken_count(lined) and story.notes == []
+
+
+def test_repeated_wording_lists_unchanged_returns_only():
+    from ragscript import checks
+    same = ("The steady hum of the vents filled the room. I walked down the hall alone. "
+            "The steady hum of the vents filled the room. A door closed behind me somewhere. "
+            "The steady hum of the vents filled the room.")
+    changed = ("The steady hum of the vents filled the room. I walked down the hall alone. "
+               "The hum stalled for one heartbeat. A door closed behind me somewhere. Then the vents breathed again.")
+    assert checks.repeated_wording(same)[0][1] == 3
+    assert checks.repeated_wording(changed) == []
+
+
+def test_outline_issues_find_logic_holes():
+    from ragscript import checks
+    beats = [dict(beat="hook", place="booth", change="the monitor shows him early", detail="hum: steady"),
+             dict(beat="setup", place="", change="the monitor shows him early again", detail="hum: louder"),
+             dict(beat="reveal", place="hall", change="a door opens by itself", detail="hum: stalls"),
+             dict(beat="climax", place="closet", change="the handle turns slowly now", detail="hum: dies")]
+    found = " | ".join(checks.outline_issues(beats, 3))
+    assert 'no "place"' in found and "almost the same thing" in found and "again right after" in found
+    assert 'the detail "hum" is used in 4 beats' in found
+    assert checks.outline_issues(beats[2:3], 3) == []
+
+
+def test_critic_issues_reach_the_revision_prompt(tmp_path):
+    from tests.support import FakeLLM
+    seen = []
+
+    class L(FakeLLM):
+        def chat(self, prompt, **kw):
+            if kw.get("stage") == "critic":
+                return "2: the narrator is in the booth and the hall at once\nrubbish line"
+            if kw.get("stage") == "revise":
+                seen.append(prompt)
+            return super().chat(prompt, **kw)
+
+    write(pipeline(tmp_path, L()))
+    assert any("booth and the hall at once" in p for p in seen)
+
+
+def test_detail_returns_counts_paragraphs():
+    from ragscript import checks
+    text = "The HVAC hum filled the room.\n\nI walked on.\n\nThe hum stalled.\n\nNothing else."
+    assert checks.detail_returns(text, ["HVAC hum"]) == [("HVAC hum", 2)]
+
+
+def test_outline_issue_for_a_screen_beat_without_sees():
+    from ragscript import checks
+    beat = dict(beat="reveal", place="booth", change="the double turns its head", summary="He watches the monitor.")
+    assert any('"sees"' in x for x in checks.outline_issues([beat], 3))
+    assert not any('"sees"' in x for x in checks.outline_issues([dict(beat, sees="the hallway feed on the booth monitor")], 3))
+
+
+def test_detail_returns_ignores_articles_in_the_name():
+    from ragscript import checks
+    text = "The heavy door shut.\n\nThe heavy rain fell.\n\nI saw the turnstile."
+    assert checks.detail_returns(text, ["heavy rattle of the turnstile"]) == []

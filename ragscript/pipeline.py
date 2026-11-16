@@ -80,7 +80,7 @@ class Pipeline:
         return None
 
     # ---- stage 2 -------------------------------------------------------
-    def outline(self, brief, g, minutes, hook, lore_txt):
+    def outline(self, brief, g, minutes, hook, lore_txt, notes=None):
         total = minutes * self.cfg["script"]["wpm"]
         tpl_vars = dict(brief=brief, genre=g.slug, genre_rules=g.rules, hook=hook, minutes=minutes,
                         total_words=total, lore=lore_txt)
@@ -96,6 +96,15 @@ class Pipeline:
                 or self._json("outline", tpl_vars, (0.4, 0.2), valid, think=False))
         if data is None:
             raise RuntimeError("could not get a valid outline from the model; try again or switch model")
+        limit = self.cfg["checks"]["motif_max"]
+        if issues := checks.outline_issues(data["beats"], limit):  # one repair attempt, kept only if it has fewer holes
+            again = self._json("outline", tpl_vars, (0.4,), valid, think=False,
+                               tail="\n\nYour previous outline had these logic problems; fix them and output the complete JSON again:\n- "
+                                    + "\n- ".join(issues))
+            if again and len(fixed := checks.outline_issues(again["beats"], limit)) < len(issues):
+                data, issues = again, fixed
+            if issues and notes is not None:
+                notes.append("Outline logic problems left: " + "; ".join(issues) + ".")
         beats = data["beats"]
         scale = total / sum(int(b["words"]) for b in beats)  # force budgets to sum to the target
         floor = max(40, round(total * 0.07))  # tiny beats get padded and repeat earlier text
@@ -117,15 +126,19 @@ class Pipeline:
         if g.grounded and not lore0:
             notes.append("No lore chunks found for this fact-grounded brief: every factual claim is unverified.")
         stage("Outline…")
-        narrator, beats, total = self.outline(brief, g, minutes, hook, ledger.cite(lore0))
-        story = Story(brief, g, narrator, total, minutes, hook, notes)
+        narrator, beats, total = self.outline(brief, g, minutes, hook, ledger.cite(lore0), notes)
         outline_txt = "\n".join(f"{i+1}. {b['beat']} ({b['words']}w): {b.get('title','')} - {b.get('summary','')}"
-                                for i, b in enumerate(beats))
+                                + (f" [narrator at: {b['place']}]" if b.get("place") else "") for i, b in enumerate(beats))
+        story = Story(brief, g, narrator, total, minutes, hook, notes, outline_txt)
 
         sections = self.drafter.draft(story, beats, ledger, outline_txt, stage)
         parts = self.refiner.run(sections, story, stage)
         ck = self.cfg["checks"]
-        script = checks.dedupe("\n\n".join(parts), ck)  # final safety net: nothing repeated may reach the output
+        script = "\n\n".join(p for p in parts if p)
+        safe = checks.dedupe(script, ck)  # final safety net: nothing repeated may reach the output
+        if lost := checks.spoken_count(script) - checks.spoken_count(safe):
+            notes.append(f"Final repeat guard removed {lost} words after the length fit.")
+        script = safe
         if not g.grounded:  # [S#] tags only help fact-checking; ungrounded stories get them leaked by the model
             script = re.sub(r"[ \t]*\[S\d+\]", "", script)
         if g.grounded and ledger.cited_text:
@@ -140,7 +153,8 @@ class Pipeline:
                                          excerpt=" ".join(script.split()[:500])), (0.7, 0.7),
                          lambda d: d["titles"], max_tokens=800) or {}  # a list or text answer raises here and is retried
         rep = report.build(script, target_words=total, minutes=minutes, refs=ledger.refs, cited_text=ledger.cited_text,
-                           grounded=g.grounded, banned=self.banned, cfg=self.cfg, notes=notes, brief=brief)
+                           grounded=g.grounded, banned=self.banned, cfg=self.cfg, notes=notes, brief=brief,
+                           details=[str(b.get("detail", "")).split(":")[0].strip() for b in beats])
         doc = render.Doc(brief, slug, minutes, narrator, pkg,
                          render.chapters([(b, checks.spoken_count(t)) for b, t in sections], rep.words,
                                          self.cfg["script"]["wpm"]),
@@ -150,5 +164,7 @@ class Pipeline:
         out.mkdir(exist_ok=True)
         path = out / f"{slug}-{minutes}min-{re.sub(r'[^a-z0-9]+', '-', brief.lower())[:50].strip('-') or 'script'}.md"
         path.write_text(md, encoding="utf-8")
+        trace = dict(brief=brief, outline=beats, drafted=[t for _, t in sections], refined=parts, notes=notes)
+        path.with_suffix(".trace.json").write_text(json.dumps(trace, indent=1, default=str), encoding="utf-8")  # replay a stage without re-running the model
         vram.log_stage("done")
         return {"path": path, "markdown": md, "stats": rep}

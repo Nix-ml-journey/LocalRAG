@@ -82,7 +82,8 @@ def run(retrieval_only=False, ids=None, minutes=None, label=None):
                 shutil.copy(r["path"], dest / r["path"].name)
             line += (f" words={s.words}/{s.target_words} rep={s.repeated_phrase_rate:.1%}"
                      f" pauses/min={s.pauses_per_minute:.1f} tense={'MIXED' if s.mixed_tense else 'ok'}"
-                     f" sent={s.avg_sentence_words}")
+                     f" sent={s.avg_sentence_words} same-words={len(s.repeated_wording)}"
+                     f" over-limit={sum(n > s.motif_limit for _, n in s.repeated_wording)}")
         print(line, flush=True)
     print(f"\nRetrieval hit rate: {sum(hits)}/{len(hits)}")
     print("Expected sources by rank: " + "  ".join(f"{k}={v:.2f}" for k, v in top_k(all_ranks).items()))
@@ -92,6 +93,8 @@ def run(retrieval_only=False, ids=None, minutes=None, label=None):
         print(f"[PAUSE] cues per minute (mean): {statistics.mean(s.pauses_per_minute for s in reports):.1f}   "
               f"scripts with mixed tense: {sum(s.mixed_tense for s in reports)}/{len(reports)}   "
               f"sentence length (mean): {statistics.mean(s.avg_sentence_words for s in reports):.1f} words")
+        print(f"Details returning in the same words (mean per script): {statistics.mean(len(s.repeated_wording) for s in reports):.1f}   "
+              f"scripts with one over the limit: {sum(any(n > s.motif_limit for _, n in s.repeated_wording) for s in reports)}/{len(reports)}")
         if dest:
             (dest / "stats.json").write_text(json.dumps([dataclasses.asdict(s) for s in reports], indent=1), encoding="utf-8")
             print(f"saved to {dest}")

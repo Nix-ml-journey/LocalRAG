@@ -38,7 +38,9 @@ class FakeLLM:
     def chat(self, prompt, **kw):
         stage = kw.get("stage")
         if stage == "outline":
-            beats = [{"beat": b, "title": b, "words": 107, "summary": f"{b} scene"} for b in BEATS]
+            beats = [{"beat": b, "title": b, "words": 107, "summary": f"{b} scene", "place": f"room {i}",
+                      "change": f"event number {i} {'alpha beta gamma delta'.split()[i % 4]} {'north south east west'.split()[i % 4]} {i * 7}",
+                      "detail": ["hum: stalls", "smell: sharpens", "keys: rattle"][i % 3]} for i, b in enumerate(BEATS)]
             return '{"narrator": "Eli, a night guard", "beats": %s}' % str(beats).replace("'", '"')
         if stage == "section":
             if "Previous attempt:" in prompt:  # corrective retry: the real model repeats itself again
@@ -59,6 +61,8 @@ class FakeLLM:
             return prompt.split("Section to rewrite:\n", 1)[1].strip()
         if stage == "revise":  # a model that does not fix anything
             return prompt.split("Section to revise:\n", 1)[1].split("\n\nFix exactly", 1)[0].strip()
+        if stage == "critic":
+            return "NONE"
         if stage == "summary":
             return "summary"
         if stage == "package":
