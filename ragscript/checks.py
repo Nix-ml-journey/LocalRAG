@@ -149,6 +149,11 @@ def outline_issues(beats, limit):
                 out.append(f'{tag} uses the detail "{name}" again right after the beat before')
         prev_detail = name
     out += [f'the detail "{n}" is used in {c} beats; at most {limit}' for n, c in uses.items() if c > limit]
+    if len(beats) >= 4:  # the final image must grow from something an earlier beat already showed
+        seen = set().union(*(_content_set(f"{b.title} {b.summary} {b.sees} {b.change} {b.detail}") for b in beats[:-2]))
+        if not _content_set(f"{beats[-1].summary} {beats[-1].change}") & seen:
+            out.append("the last beat uses no object, sound or fact from the earlier beats; "
+                       "its final image must come from something the story already showed")
     return out
 
 
@@ -215,6 +220,33 @@ def unused_objects(text, top=3):
         if len(head) >= 4 and head not in _FUNC and w.count(_stem(head)) == 1 and head not in out:
             out.append(head)
     return out[:top]
+
+
+_DROP = re.compile(r"\b(?:dropped|abandoned|threw|flung|lost)\s+(?:my|the|his)\s+(\w+(?:\s+\w+)?)"
+                   r"|\bmy\s+(\w+)\s+(?:hit|fell to|clattered (?:to|onto|across)|skidded across|slid across)\s+the\b", re.I)
+_USE = re.compile(r"\b(?:held|holding|gripp\w*|clutch\w*|scratch\w*|jingl\w*|rattl\w*|unlock\w*|press\w*|using|dial\w*|"
+                  r"rais\w*|lift\w*|wav\w*|swung|twist\w*|fumbl\w*|thumb\w*)\b", re.I)
+_TAKE = re.compile(r"\b(?:picked|grabbed|snatched|retrieved|scooped|recovered)\b", re.I)
+
+
+def dropped_then_used(parts):
+    """Objects the narrator drops, abandons or loses and then uses again with no sentence about taking them back:
+    [(object, index of the part that uses it)]. A simple word match, so it names only a likely hole for the critic."""
+    sents = [(i, s) for i, p in enumerate(parts) for s in sentences(unmark(p))]
+    out = []
+    for k, (_, s) in enumerate(sents):
+        for m in _DROP.finditer(s):
+            noun = (m.group(1) or m.group(2)).split()
+            noun = noun[0] if len(noun) > 1 and noun[1].lower() in _PREP else noun[-1]
+            stem = _stem(noun.lower())
+            for j, later in sents[k + 1:]:
+                if stem in {_stem(x) for x in words(later)}:
+                    if _TAKE.search(later):
+                        break
+                    if _USE.search(later):
+                        out.append((noun.lower(), j))
+                        break
+    return out
 
 
 def avg_sentence_words(text) -> float:

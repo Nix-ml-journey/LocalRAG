@@ -164,6 +164,9 @@ class Refiner:
             i = int(m.group(1)) - 1
             if 0 <= i < len(parts) and len(out.get(i, [])) < 2:
                 out.setdefault(i, []).append(Issue("logic", m.group(2).strip()))
+        for noun, i in checks.dropped_then_used(parts):  # a code check, so the critic cannot miss it
+            if not any(noun in x.message for x in out.get(i, [])):
+                out.setdefault(i, []).append(Issue("logic", f"the narrator dropped his {noun} earlier but uses it here"))
         return out
 
     def revise_weakest(self, parts, story, logic=None):

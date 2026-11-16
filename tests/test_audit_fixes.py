@@ -418,6 +418,26 @@ def test_outline_issues_find_logic_holes():
     assert checks.outline_issues(beats[2:3], 3) == []
 
 
+def test_outline_last_beat_must_use_something_shown_earlier():
+    from ragscript import checks
+    def beat(name, summary):
+        return chunking.Beat(beat=name, place="booth", change=summary, summary=summary)
+    story = [beat("hook", "a navy jacket on camera four"), beat("setup", "the guard checks logs"),
+             beat("rising_tension", "footsteps near the door"), beat("reveal", "the face turns"),
+             beat("climax", "the handle rattles"), beat("aftermath", "he hides inside the closet")]
+    bad = checks.outline_issues(story + [beat("outro", "silence settles everywhere")], 3)
+    good = checks.outline_issues(story + [beat("outro", "the navy jacket hangs empty")], 3)
+    assert any("last beat" in x for x in bad) and not any("last beat" in x for x in good)
+
+
+def test_dropped_then_used_finds_an_object_used_after_it_was_dropped():
+    from ragscript import checks
+    parts = ["My keys hit the tile while I abandoned my radio to flee.", "The scratching of my keys echoed on the lock.",
+             "I picked up the radio and held it close."]
+    assert checks.dropped_then_used(parts) == [("keys", 1)]
+    assert checks.dropped_then_used(["I dropped my keys.", "I grabbed the keys and gripped them."]) == []
+
+
 def test_critic_issues_reach_the_revision_prompt(tmp_path):
     from tests.support import FakeLLM
     seen = []
