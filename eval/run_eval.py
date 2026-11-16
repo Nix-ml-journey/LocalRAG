@@ -56,6 +56,11 @@ def compare_rerank(model=None):
               + "  ".join(f"{k}={v:.2f}" for k, v in m.items()) + f"  [{time.time() - t0:.1f}s for {len(briefs) * 3} searches]")
 
 
+def _over_limit(s):
+    """Details over the return limit in one script: the same words coming back, or a detail in too many paragraphs."""
+    return sum(n > s.motif_limit for _, n in s.repeated_wording + s.detail_returns)
+
+
 def run(retrieval_only=False, ids=None, minutes=None, label=None):
     """ids: only these brief ids; minutes: write every brief at this length; label: also copy the scripts and a
     stats.json to output/<label>/ (a quick regression run: `cli.py eval --ids b01,b03,b08 --minutes 5 --label x`)."""
@@ -83,7 +88,7 @@ def run(retrieval_only=False, ids=None, minutes=None, label=None):
             line += (f" words={s.words}/{s.target_words} rep={s.repeated_phrase_rate:.1%}"
                      f" pauses/min={s.pauses_per_minute:.1f} tense={'MIXED' if s.mixed_tense else 'ok'}"
                      f" sent={s.avg_sentence_words} same-words={len(s.repeated_wording)}"
-                     f" over-limit={sum(n > s.motif_limit for _, n in s.repeated_wording)}")
+                     f" over-limit={_over_limit(s)}")
         print(line, flush=True)
     print(f"\nRetrieval hit rate: {sum(hits)}/{len(hits)}")
     print("Expected sources by rank: " + "  ".join(f"{k}={v:.2f}" for k, v in top_k(all_ranks).items()))
@@ -94,7 +99,7 @@ def run(retrieval_only=False, ids=None, minutes=None, label=None):
               f"scripts with mixed tense: {sum(s.mixed_tense for s in reports)}/{len(reports)}   "
               f"sentence length (mean): {statistics.mean(s.avg_sentence_words for s in reports):.1f} words")
         print(f"Details returning in the same words (mean per script): {statistics.mean(len(s.repeated_wording) for s in reports):.1f}   "
-              f"scripts with one over the limit: {sum(any(n > s.motif_limit for _, n in s.repeated_wording) for s in reports)}/{len(reports)}")
+              f"scripts with one over the limit: {sum(_over_limit(s) > 0 for s in reports)}/{len(reports)}")
         if dest:
             (dest / "stats.json").write_text(json.dumps([dataclasses.asdict(s) for s in reports], indent=1), encoding="utf-8")
             print(f"saved to {dest}")
