@@ -178,7 +178,8 @@ class Pipeline:
                          lambda d: d["titles"], max_tokens=800) or {}  # a list or text answer raises here and is retried
         rep = report.build(script, target_words=total, minutes=minutes, refs=ledger.refs, cited_text=ledger.cited_text,
                            grounded=g.grounded, banned=self.banned, cfg=self.cfg, notes=notes, brief=brief,
-                           details=[b.detail.split(":")[0].strip() for b in beats])
+                           details=[b.detail.split(":")[0].strip() for b in beats],
+                           setting=checks.setting_words(brief, *[f"{b.place} {b.sees} {b.detail}" for b in beats]))
         doc = report.Doc(brief, slug, minutes, narrator, pkg,
                          report.chapters([(b, checks.spoken_count(t)) for b, t in sections], rep.words,
                                          self.cfg["script"]["wpm"]),

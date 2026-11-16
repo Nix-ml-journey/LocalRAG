@@ -159,7 +159,8 @@ class Refiner:
         reply = self.ask("critic", dict(narrator=story.narrator, outline=story.outline, text=numbered, hints=hints),
                          temperature=0.2, max_tokens=300)
         out = {}
-        for m in re.finditer(r"(?m)^\s*\[?(\d+)\]?\s*[:.)-]\s*(\S.*)$", reply):
+        # "2: ...", "2) ...", "- 2. ..." and "Section 2: ..." all name section 2
+        for m in re.finditer(r"(?mi)^\s*(?:[-*]\s*)?(?:section\s*)?\[?(\d+)\]?\s*[:.)-]\s*(\S.*)$", reply):
             i = int(m.group(1)) - 1
             if 0 <= i < len(parts) and len(out.get(i, [])) < 2:
                 out.setdefault(i, []).append(Issue("logic", m.group(2).strip()))

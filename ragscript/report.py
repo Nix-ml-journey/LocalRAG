@@ -32,6 +32,7 @@ class Report:
     motif_limit: int                # the most times one detail may return (config checks.motif_max)
     flags: list = field(default_factory=list)            # warnings the Report itself decided on
     notes: list = field(default_factory=list)
+    repeated_outside_setting: float = 0.0   # repeated-phrase rate without phrases that hold a setting word
     detail_returns: list = field(default_factory=list)   # [(detail, paragraphs)] how often each outline detail came back
 
     @property
@@ -39,7 +40,7 @@ class Report:
         return self.pause_cues / self.minutes
 
 
-def build(script, *, target_words, minutes, refs, cited_text, grounded, banned, cfg, notes, brief="", details=()) -> Report:
+def build(script, *, target_words, minutes, refs, cited_text, grounded, banned, cfg, notes, brief="", details=(), setting=frozenset()) -> Report:
     """Measure `script`. refs: every source chunk text shown to the model; cited_text: {S number: chunk text};
     the two fact checks only run for grounded genres."""
     ck = cfg["checks"]
@@ -59,13 +60,17 @@ def build(script, *, target_words, minutes, refs, cited_text, grounded, banned, 
         mixed_tense=checks.mixed_tense(script, ck),
         overused_words=checks.overused_words(script, ck, skip=checks.topic_words(brief)),
         repeated_wording=checks.repeated_wording(script), motif_limit=ck["motif_max"], notes=notes,
-        detail_returns=checks.detail_returns(script, details))
+        detail_returns=checks.detail_returns(script, details),
+        repeated_outside_setting=round(checks.repeated_rate_outside(script, ck["repeated_ngram"], setting), 4))
     if r.mixed_tense:
         r.flags.append("**Tense switches between past and present in the narration (check before recording).**")
     if over := [p for p, n in r.repeated_wording if n > r.motif_limit]:
         r.flags.append(f"A detail returned in the same words more than {r.motif_limit} times: " + "; ".join(over))
     if over := [f"{n} ({c})" for n, c in r.detail_returns if c > r.motif_limit]:
         r.flags.append(f"A recurring detail came back in more than {r.motif_limit} paragraphs: " + "; ".join(over))
+    if r.repeated_outside_setting > ck["repeat_flag"]:
+        r.flags.append(f"{r.repeated_outside_setting:.1%} of the script repeats phrases that are not part of the setting "
+                       "(real repetition: vary or cut them)")
     limit = cfg["style"]["max_pauses_per_minute"]
     if r.pauses_per_minute > limit:
         r.flags.append(f"{r.pause_cues} [PAUSE] cues in {minutes} minutes: more than {limit} a minute reads as halting")
@@ -117,7 +122,7 @@ def render(doc: Doc, script, report) -> str:
                               for src, ns in doc.sources.items()], "",
          "## Checks",
          f"- Word accuracy: {r.word_accuracy:.1%}",
-         f"- Repeated-phrase rate: {r.repeated_phrase_rate:.1%}",
+         f"- Repeated-phrase rate: {r.repeated_phrase_rate:.1%} ({r.repeated_outside_setting:.1%} outside the setting words)",
          f"- Average sentence length: {r.avg_sentence_words} words (natural narration is about {r.sentence_range})"]
     if r.overused_words:
         L.append("- Words used often (crutch words, consider varying): " + ", ".join(f"{w} ×{n}" for w, n in r.overused_words))

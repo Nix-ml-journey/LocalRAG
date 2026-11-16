@@ -304,9 +304,9 @@ def test_report_decides_which_warnings_to_show_and_render_only_prints_them():
     calm = report.build("I walked in. [PAUSE] Then I left.", **kw)
     assert calm.flags == [] and calm.pauses_per_minute == 0.2
     halting = report.build("I walked in. " + "[PAUSE] I stood. " * 12, **kw)
-    assert halting.flags and "[PAUSE] cues in 5 minutes" in halting.flags[0]
+    pause = next(f for f in halting.flags if "[PAUSE] cues in 5 minutes" in f)
     md = report.render(report.Doc("b", "horror", 5, "n", {}, [(0, "c")], {}), "text", halting)
-    assert "- " + halting.flags[0] in md
+    assert all("- " + f in md for f in halting.flags) and "- " + pause in md
 
 
 def test_eval_ranks_are_computed_once_and_give_both_the_hit_and_the_top_k():
@@ -580,3 +580,32 @@ def test_save_never_overwrites_an_earlier_script(tmp_path, monkeypatch):
     b = report.save(tmp_path, "horror", 5, "A Brief!", "two", {"k": 2})
     assert a != b and a.read_text(encoding="utf-8") == "one" and b.read_text(encoding="utf-8") == "two"
     assert a.name.startswith("horror-5min-a-brief-") and a.with_suffix(".trace.json").exists()
+
+
+def test_repeated_rate_outside_the_setting_ignores_the_burger_bun():
+    from ragscript import checks
+    text = ("The hum of the vents filled the room. I stared at the door. "
+            "The hum of the vents filled the hall. I stared at the wall.")
+    setting = checks.setting_words("hum of the vents")
+    outside, everything = checks.repeated_rate_outside(text, 4, setting), checks.repeated_rate(text, 4)
+    assert 0 < outside < everything
+    assert checks.repeated_rate_outside(text, 4, set()) == everything
+
+
+def test_tidy_drops_a_pause_that_is_followed_by_another_on_the_next_line():
+    from ragscript import checks
+    assert checks.tidy("X.\n[PAUSE]\n[PAUSE]\nY.") == "X.\n[PAUSE]\nY."
+
+
+def test_the_critic_reply_is_read_whatever_its_list_format():
+    from types import SimpleNamespace
+    from ragscript.refine import Refiner
+    reply = """2: the narrator is in two places
+- 3. an object is never used again
+Section 4: a fact contradicts an earlier one
+5) the same scene is told twice
+NONE of this matters
+99: not a real section"""
+    ref = Refiner(lambda stage, vars_, **kw: reply, config.load(), [])
+    found = ref.critique(["a", "b", "c", "d", "e"], SimpleNamespace(narrator="n", outline="o"))
+    assert sorted(found) == [1, 2, 3, 4] and found[2][0].message == "an object is never used again"

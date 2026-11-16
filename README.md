@@ -40,7 +40,7 @@ Measured on this machine (num_ctx 16384). Single runs; quality metrics swing a f
 | History 5-min script, after the Verify upgrade | 722 words (accuracy 96.3%), repeats 4.3%, 14 sentences marked `{{INVENTED}}` |
 | Sci-fi 5-min script, after the refine pass | 759 words (accuracy 98.8%), repeats 1.6%, no tense switches |
 | Speed | about 2.5-7 min per 5-min script; generation is decode-bound at ~40-45 tokens/s |
-| Offline tests (no GPU, no Ollama) | 91 pass (retrieval filters and rank fusion run on a real Chroma store with a fake embedder), including an end-to-end repeat guard that fails if the dedupe is removed |
+| Offline tests (no GPU, no Ollama) | 94 pass (retrieval filters and rank fusion run on a real Chroma store with a fake embedder), including an end-to-end repeat guard that fails if the dedupe is removed |
 
 Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks claims the lore does not support, `[S1]` marks facts that do):
 > On December 4, 1872, the *Dei Gratia* spotted her sailing erratically in the Atlantic [S1]. No one answered their signals, and a boarding party found the ship completely deserted [S1].
@@ -139,7 +139,7 @@ Drop files (`.txt .md .docx .pdf .epub .srt .vtt`) in `data/<genre>/`, then run 
 ## Fact-checking and quality checks
 Grounded genres take facts only from retrieved lore (`[S#]`); anything invented is wrapped as `{{INVENTED: …}}` and listed under Checks. After polishing, the **Verify step** asks the model YES/NO ("does the lore state this?") for every cited sentence and every sentence that names something without a citation (at most 40 checks); each NO becomes `{{INVENTED}}`. This reduces but cannot eliminate invention, and paraphrases can be mis-marked: fact-check before publishing. The lore notes are paraphrased from Wikipedia (each file's front matter names the source and check date), so verify them too.
 
-Every output also reports word-count accuracy, repeated-phrase rate, average sentence length, banned-phrase hits, passages with >80% 5-gram overlap with a source, details that return in the same words, the paragraphs that bring back each outline detail (flagged above `checks.motif_max` = 3), crutch words, past/present tense switches and `[PAUSE]` density. The last three only report; the weakest-section rewrite fixes tense, `[PAUSE]` and repeat problems automatically.
+Every output also reports word-count accuracy, repeated-phrase rate (also shown outside the setting words: a repeated phrase that holds a word from the brief or the outline's place, sees or detail does not count there, because a night-shift story will keep saying "monitor" and "fan"; flagged above `checks.repeat_flag` = 3%), average sentence length, banned-phrase hits, passages with >80% 5-gram overlap with a source, details that return in the same words, the paragraphs that bring back each outline detail (flagged above `checks.motif_max` = 3), crutch words, past/present tense switches and `[PAUSE]` density. The last three only report; the weakest-section rewrite fixes tense, `[PAUSE]` and repeat problems automatically.
 
 ## Optional: parallel polish
 To polish 2 sections at once, set the Ollama server variable `OLLAMA_NUM_PARALLEL=2` (PowerShell: `[Environment]::SetEnvironmentVariable("OLLAMA_NUM_PARALLEL","2","User")`, then restart Ollama) **and** `llm.parallel: 2` in `config.yaml` (peak GPU 11.8 → 13.3 GB). Undo with `SetEnvironmentVariable("OLLAMA_NUM_PARALLEL",$null,"User")`.

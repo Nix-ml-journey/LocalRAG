@@ -190,7 +190,7 @@ def tidy(text):
     sentence goes on its own line, and a [PAUSE] directly followed by another is dropped. Words are unchanged."""
     t = "\n".join(line.strip() for line in text.split("\n"))
     t = re.sub(r"(?m)(\S)[ \t]+\[PAUSE\]$", r"\1\n\n[PAUSE]", t)
-    t = re.sub(r"\[PAUSE\]\s*\n\s*\n\s*(?=\[PAUSE\])", "", t)
+    t = re.sub(r"\[PAUSE\]\s*(?=\[PAUSE\])", "", t)
     return re.sub(r"\n{3,}", "\n\n", t).strip()
 
 
@@ -270,6 +270,29 @@ should since still than their theirs them themselves there these they those thou
 very were what when where whether which while whose would your yours yourself""".split())
 _FUNC = _STOP | set("""that with from this they them were been have into over like just when then than what your
 does some only more each even also very much such back there here will""".split())
+
+
+_SHORT_STOP = set("and but for the its his her our was are had has not you who how why can may few all any one two out off "
+                  "own too yet now per via she him air".split())
+
+
+def setting_words(*texts):
+    """The stems of the content words (4+ letters) in the given texts: used for the brief and the outline's place,
+    sees and detail text, i.e. the story's setting and its recurring details."""
+    # "key_weight" is one token to the splitter, so underscores become spaces first; 3 letters are kept for "hum", "fan"
+    return {_stem(w) for t in texts for w in words(unmark(t).replace("_", " "))
+            if len(w) >= 3 and w not in _FUNC and w not in _SHORT_STOP}
+
+
+def repeated_rate_outside(text, n, setting) -> float:
+    """Like `repeated_rate`, but a repeated n-gram that holds a setting word does not count: a night-shift guard story
+    will say "screen" and "fan" again and again, and that is the place, not a habit. What is left is real tic."""
+    w = words(text)
+    grams = [tuple(w[i:i + n]) for i in range(len(w) - n + 1)]
+    if not grams:
+        return 0.0
+    c = Counter(grams)
+    return sum(v for g, v in c.items() if v > 1 and not any(_stem(x) in setting for x in g)) / len(grams)
 
 
 def _stem(w):

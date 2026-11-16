@@ -66,14 +66,15 @@ def run(retrieval_only=False, ids=None, minutes=None, label=None):
                 shutil.copy(r["path"], dest / r["path"].name)
             line += (f" words={s.words}/{s.target_words} rep={s.repeated_phrase_rate:.1%}"
                      f" pauses/min={s.pauses_per_minute:.1f} tense={'MIXED' if s.mixed_tense else 'ok'}"
-                     f" sent={s.avg_sentence_words} same-words={len(s.repeated_wording)}"
+                     f" sent={s.avg_sentence_words} rep-outside={s.repeated_outside_setting:.1%} same-words={len(s.repeated_wording)}"
                      f" over-limit={_over_limit(s)}")
         print(line, flush=True)
     print(f"\nRetrieval hit rate: {sum(hits)}/{len(hits)}")
     print("Expected sources by rank: " + "  ".join(f"{k}={v:.2f}" for k, v in top_k(all_ranks).items()))
     if reports:
         print(f"Word-count accuracy (mean): {statistics.mean(s.word_accuracy for s in reports):.1%}")
-        print(f"Repeated-phrase rate (mean): {statistics.mean(s.repeated_phrase_rate for s in reports):.1%}")
+        print(f"Repeated-phrase rate (mean): {statistics.mean(s.repeated_phrase_rate for s in reports):.1%}   "
+              f"outside the setting words: {statistics.mean(s.repeated_outside_setting for s in reports):.1%}")
         print(f"[PAUSE] cues per minute (mean): {statistics.mean(s.pauses_per_minute for s in reports):.1f}   "
               f"scripts with mixed tense: {sum(s.mixed_tense for s in reports)}/{len(reports)}   "
               f"sentence length (mean): {statistics.mean(s.avg_sentence_words for s in reports):.1f} words")
