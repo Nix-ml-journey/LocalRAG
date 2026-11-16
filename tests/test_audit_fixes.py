@@ -437,7 +437,7 @@ def test_critic_issues_reach_the_revision_prompt(tmp_path):
 def test_detail_returns_counts_paragraphs():
     from ragscript import checks
     text = "The HVAC hum filled the room.\n\nI walked on.\n\nThe hum stalled.\n\nNothing else."
-    assert checks.detail_returns(text, ["HVAC hum"]) == [("HVAC hum", 2)]
+    assert checks.detail_returns(text, ["hum"]) == [("hum", 2)]
 
 
 def test_outline_issue_for_a_screen_beat_without_sees():
@@ -450,7 +450,7 @@ def test_outline_issue_for_a_screen_beat_without_sees():
 def test_detail_returns_ignores_articles_in_the_name():
     from ragscript import checks
     text = "The heavy door shut.\n\nThe heavy rain fell.\n\nI saw the turnstile."
-    assert checks.detail_returns(text, ["heavy rattle of the turnstile"]) == []
+    assert checks.detail_returns(text, ["heavy rattle of the turnstile"]) == [("heavy rattle of the turnstile", 1)]  # counted by "turnstile", not "heavy"
 
 
 def _outline_with_holes(llm_cls_calls, repaired_holes):
@@ -489,3 +489,9 @@ def test_two_runs_of_the_same_brief_keep_both_files(tmp_path, monkeypatch):
     a = write(pipeline(tmp_path))["path"]
     b = write(pipeline(tmp_path))["path"]
     assert a != b and a.exists() and b.exists()
+
+
+def test_detail_returns_ignores_a_name_word_that_is_everywhere():
+    from ragscript import checks
+    paras = [f"The floor creaked in room {i}." for i in range(6)] + ["The wax smell came back.", "A wax sting stayed."]
+    assert checks.detail_returns("\n\n".join(paras), ["floor wax"]) == [("floor wax", 2)]

@@ -156,16 +156,17 @@ _ARTICLES = {"the", "and", "his", "her", "its", "for", "our", "their"}
 
 
 def detail_returns(text, names):
-    """How many paragraphs of the script bring back each named recurring detail: [(name, paragraphs)], most first. A
-    paragraph counts when it holds at least half of the name's content words, so "smell of ozone" and "ozone" meet."""
+    """How many paragraphs of the script bring back each named recurring detail: [(name, paragraphs)], most first. The
+    detail is followed by its most specific word, the one found in the fewest paragraphs, so a common word in the name
+    ("floor" in "floor wax") cannot inflate the count."""
     paras = [set(words(unmark(p))) for p in re.split(r"\n\s*\n", text)]
     out = {}
     for name in names:
         key = [w for w in words(name) if len(w) >= 3 and w not in _FUNC and w not in _ARTICLES]
-        if key and name not in out:
-            need = (len(key) + 1) // 2
-            out[name] = sum(sum(w in p for w in key) >= need for p in paras)
-    return sorted(((n, c) for n, c in out.items() if c), key=lambda x: -x[1])
+        found = [n for w in key if (n := sum(w in p for p in paras))]
+        if found and name not in out:
+            out[name] = min(found)
+    return sorted(out.items(), key=lambda x: -x[1])
 
 
 def avg_sentence_words(text) -> float:
