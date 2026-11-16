@@ -19,32 +19,33 @@ class Drafter:
         """The drafted sections [(beat, text)] for every beat of the outline."""
         genre, summary, sections = story.genre, "(nothing written yet)", []
         for i, b in enumerate(beats):
-            stage(f"Writing {i+1}/{len(beats)}: {b['beat']}")
+            stage(f"Writing {i+1}/{len(beats)}: {b.beat}")
             if i:
                 self._rebudget(beats, i, sections, story.total)
             k = self.k()  # re-read each beat: an OOM retry may have halved num_ctx
-            q = f"{b.get('title','')} {b.get('summary','')}"
-            examples = (self.ret.search("scripts", q, genre.slug, beat=b["beat"], k=k)
+            q = f"{b.title} {b.summary}"
+            examples = (self.ret.search("scripts", q, genre.slug, beat=b.beat, k=k)
                         or self.ret.search("scripts", q, genre.slug, k=k))
-            if b["beat"] == "outro":  # use the endings library for the last beat
+            if b.beat == "outro":  # use the endings library for the last beat
                 examples += self.ret.search("hooks", q, genre.slug, beat="ending", k=k)
             lore = self.ret.search("lore", f"{story.brief} {q}", genre.slug, k=k)
-            beat_txt = f"{b['beat']}: {b.get('title','')} - {b.get('summary','')}"
+            beat_txt = f"{b.beat}: {b.title} - {b.summary}"
             for key, label in (("place", "Where the narrator is for this whole beat"),
                                ("sees", "What the narrator looks at from that place"),
                                ("change", "What this beat adds that is new"),
                                ("detail", "The one recurring detail to use here, and how it changes")):
-                if b.get(key):
-                    beat_txt += f"\n{label}: {b[key]}"
-            if b["beat"] == "hook":
+                if getattr(b, key):
+                    beat_txt += f"\n{label}: {getattr(b, key)}"
+            if b.beat == "hook":
                 beat_txt += f"\nOpen with this chosen hook, polished and extended:\n{story.hook}"
             ledger.add_style(examples)  # so the >80% overlap check also covers style examples
             tail = ""
             if sections:
-                tail = ("\n\nEnd of the text written so far. Do NOT reuse its sentences or their wording; a recurring detail may return only if it has changed; "
-                        "advance the story with new events:\n" + " ".join(sections[-1][1].split()[-120:]))
+                tail = ("\n\nEnd of the text written so far. Do NOT reuse its sentences or their wording; "
+                        "a recurring detail may return only if it has changed; advance the story with new events:\n"
+                        + " ".join(sections[-1][1].split()[-120:]))
             vars_ = dict(brief=story.brief, genre_rules=genre.rules, narrator=story.narrator, outline=outline_txt,
-                         beat=beat_txt, beat_words=b["words"], summary=summary + tail,
+                         beat=beat_txt, beat_words=b.words, summary=summary + tail,
                          style_examples="\n\n".join(f"- {c['text']}" for c in examples) or "(none)",
                          lore=ledger.cite(lore) or "(none)")
             earlier = "\n\n".join(t for _, t in sections)
@@ -61,18 +62,18 @@ class Drafter:
     def _rebudget(beats, i, sections, total):
         """Rolling budget: spread any over/undershoot so far across the beats still to write. Overshoot counts only
         up to the planned size, because the polish pass trims drafts back to it."""
-        done = sum(min(checks.spoken_count(t), x["words"]) for x, t in sections)
-        left = (total - done) / sum(x["orig"] for x in beats[i:])
+        done = sum(min(checks.spoken_count(t), x.words) for x, t in sections)
+        left = (total - done) / sum(x.orig for x in beats[i:])
         for x in beats[i:]:
-            x["words"] = max(30, round(x["orig"] * min(1.8, max(0.5, left))))
+            x.words = max(30, round(x.orig * min(1.8, max(0.5, left))))
 
     def _write_section(self, vars_, b, earlier, grounded):
         # models write 3-5x a small word budget, so cap generation and cut the unfinished last sentence
-        cap = int(b["words"] * self.cfg["length"]["token_cap"]) + 40
+        cap = int(b.words * self.cfg["length"]["token_cap"]) + 40
         text = clean_reply(self.ask("section", vars_, max_tokens=cap))
-        issues = draft_issues(text, earlier, self.cfg, self.banned, b["words"], grounded)
+        issues = draft_issues(text, earlier, self.cfg, self.banned, b.words, grounded)
         if issues:  # one corrective retry
-            log.info("retry '%s': %s", b["beat"], "; ".join(i.message[:60] for i in issues))
+            log.info("retry '%s': %s", b.beat, "; ".join(i.message[:60] for i in issues))
             tail = "\n\nPrevious attempt:\n" + text + "\n\nRewrite it; " + "; ".join(i.message for i in issues) + "."
             text = clean_reply(self.ask("section", vars_, tail=tail, max_tokens=cap))
         return text

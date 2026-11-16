@@ -3,7 +3,8 @@ import re
 
 CUE = re.compile(r"\[[^\]]*\]")
 # sentence boundary; a [S#] tag after the full stop stays with its sentence, and the tag itself ends one
-# an initial ("J. Habakuk"), a title ("Dr. Smith") or a lower-case continuation ("1861 [S1] before", "i.e. the") is not a sentence end;
+# an initial ("J. Habakuk"), a title ("Dr. Smith") or a lower-case continuation ("1861 [S1] before", "i.e. the")
+# is not a sentence end;
 # a closing }} of an {{INVENTED}} mark is
 SENT = r"(?<=[.!?…”\"\]}])(?<!\b[A-Z]\.)(?<!\bMr\.)(?<!\bDr\.)(?<!\bSt\.)(?<!\bMrs\.)(?<!\bCapt\.)\s+(?!\[S\d)(?![a-z])"
 

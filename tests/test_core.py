@@ -87,7 +87,7 @@ def test_avg_sentence_words_ignores_cues_and_counts_fragments():
 def test_prompts_ask_for_natural_sentence_rhythm():
     """The choppy-fragment problem came from nine prompts saying 'short sentences'; keep the rhythm target in place."""
     root = Path(__file__).resolve().parent.parent / "prompts"
-    assert config.sentence_range(CFG) == "10-15"
+    assert config.sentence_range(CFG) == "12-16"
     for f in ("stages/section.md", "stages/polish.md", "stages/fit.md"):
         assert "<<sentence_range>> words" in (root / f).read_text(encoding="utf-8"), f  # filled from config style.sentence_words
     for f in root.glob("*.md"):
@@ -104,25 +104,26 @@ def test_clean_narration_strips_tags_and_markers_but_keeps_cues():
 
 
 def test_render_script_is_clean_and_annotated_copy_is_last():
-    from ragscript import render, report
+    from ragscript import report
     rep = report.Report(words=10, target_words=10, word_accuracy=1.0, repeated_phrase_rate=0.0, avg_sentence_words=5.0,
                         sentence_range="10-15", overlap_flags=[], banned_hits=[], invented=["x"], unsupported_cites=[],
                         uncited_facts=[], pause_cues=0, minutes=5, mixed_tense=False, overused_words=[], repeated_wording=[], motif_limit=3)
-    doc = render.Doc("b", "history", 5, "n", {}, [(0, "c")], {})
-    md = render.render(doc, "Fact one [S1]. {{INVENTED: a smell}}.", rep)
+    doc = report.Doc("b", "history", 5, "n", {}, [(0, "c")], {})
+    md = report.render(doc, "Fact one [S1]. {{INVENTED: a smell}}.", rep)
     main = md[md.index("## Script"): md.index("## Chapters")]
     annotated = md[md.index("## Fact-check copy"):]
     assert "[S1]" not in main and "INVENTED" not in main and "Fact one. a smell." in main
     assert "Fact one [S1]. {{INVENTED: a smell}}." in annotated  # every marker kept for fact-checking
-    plain = render.render(render.Doc("b", "horror", 5, "n", {}, [(0, "c")], {}), "Nothing to strip.", rep)
+    plain = report.render(report.Doc("b", "horror", 5, "n", {}, [(0, "c")], {}), "Nothing to strip.", rep)
     assert "Fact-check copy" not in plain  # nothing to annotate
     assert "about 10-15" in plain  # the sentence target shown is the configured one
 
 
 def test_chapters_scale_the_drafted_proportions_to_the_finished_length():
-    from ragscript import render
-    beats = [({"beat": "hook", "title": "A"}, 100), ({"beat": "setup"}, 100)]
-    assert render.chapters(beats, 300, 150) == [(0, "A"), (60, "setup")]  # 300 words at 150 wpm: the second starts at 1:00
+    from ragscript import report
+    from ragscript.chunking import Beat
+    beats = [(Beat("hook", title="A"), 100), (Beat("setup"), 100)]
+    assert report.chapters(beats, 300, 150) == [(0, "A"), (60, "setup")]  # 300 words at 150 wpm: the second starts at 1:00
 
 
 def test_overlap_flag_and_repeat_rate():

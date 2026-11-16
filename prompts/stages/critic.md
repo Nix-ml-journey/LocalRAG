@@ -8,6 +8,8 @@ Outline (for context only):
 Script, split into numbered sections:
 <<text>>
 
+Objects a simple word count found that are never mentioned again (check them; ignore any that do not matter): <<hints>>
+
 Find logic holes a listener would notice:
 - The narrator is in two places at once, or changes place with no sentence about it.
 - The strange event is explained away more than once, or an explanation is dropped without an answer.

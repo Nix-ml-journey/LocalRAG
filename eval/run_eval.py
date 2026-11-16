@@ -77,7 +77,8 @@ def run(retrieval_only=False, ids=None, minutes=None, label=None):
         print(f"[PAUSE] cues per minute (mean): {statistics.mean(s.pauses_per_minute for s in reports):.1f}   "
               f"scripts with mixed tense: {sum(s.mixed_tense for s in reports)}/{len(reports)}   "
               f"sentence length (mean): {statistics.mean(s.avg_sentence_words for s in reports):.1f} words")
-        print(f"Details returning in the same words (mean per script): {statistics.mean(len(s.repeated_wording) for s in reports):.1f}   "
+        same_words = statistics.mean(len(s.repeated_wording) for s in reports)
+        print(f"Details returning in the same words (mean per script): {same_words:.1f}   "
               f"scripts with one over the limit: {sum(_over_limit(s) > 0 for s in reports)}/{len(reports)}")
         if dest:
             (dest / "stats.json").write_text(json.dumps([dataclasses.asdict(s) for s in reports], indent=1), encoding="utf-8")

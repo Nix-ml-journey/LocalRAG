@@ -16,7 +16,8 @@ ONCE_CHECK_WORDS = 400  # the once-only name/year warning applies from this leng
 KEYS = ("topic", "source", "license")  # provenance, so a wrong fact can be traced back
 MONTHS_DAYS = set("january february march april may june july august september october november december "
                   "monday tuesday wednesday thursday friday saturday sunday".split())
-OK_CHARS = set(string.punctuation) | set("“”‘’—–…°·½¼¾§")  # anything else that is not a letter, digit or space counts as odd
+# anything else that is not a letter, digit or space counts as odd
+OK_CHARS = set(string.punctuation) | set("“”‘’—–…°·½¼¾§")
 
 
 def check(text: str, name: str = "lore_x.md") -> dict:

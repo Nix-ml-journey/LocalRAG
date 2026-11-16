@@ -132,17 +132,17 @@ def outline_issues(beats, limit):
     in more than `limit` beats is a hole."""
     out, uses, prev, prev_detail = [], Counter(), None, ""
     for i, b in enumerate(beats, 1):
-        tag = f"beat {i} ({b['beat']})"
+        tag = f"beat {i} ({b.beat})"
         for k in ("place", "change"):
-            if not str(b.get(k, "")).strip():
+            if not str(getattr(b, k)).strip():
                 out.append(f'{tag} has no "{k}"')
-        if re.search(r"\b(monitors?|screens?|cameras?|footage)\b", str(b.get("summary", "")), re.I) and not str(b.get("sees", "")).strip():
+        if _SCREEN.search(b.summary) and not b.sees.strip():
             out.append(f'{tag} shows a screen or camera but has no "sees" saying what it shows')
-        ch = _content_set(str(b.get("change", "")))
+        ch = _content_set(b.change)
         if prev and min(len(ch), len(prev)) >= 3 and len(ch & prev) / min(len(ch), len(prev)) >= 0.6:
             out.append(f"{tag} changes almost the same thing as the beat before it")
         prev = ch
-        name = str(b.get("detail", "")).split(":")[0].strip().lower()
+        name = b.detail.split(":")[0].strip().lower()
         if name:
             uses[name] += 1
             if name == prev_detail:
@@ -169,6 +169,54 @@ def detail_returns(text, names):
     return sorted(out.items(), key=lambda x: -x[1])
 
 
+_SCREEN = re.compile(r"\b(monitors?|screens?|cameras?|footage)\b", re.I)
+
+
+def fill_sees(beats):
+    """A beat whose summary shows a screen or camera but has no `sees` takes it from the nearest beat that has one (the
+    same screen is usually meant). Returns how many beats were filled; no model call is needed."""
+    filled = 0
+    for i, b in enumerate(beats):
+        if _SCREEN.search(b.summary) and not b.sees.strip():
+            near = sorted((j for j, o in enumerate(beats) if o.sees.strip()), key=lambda j: abs(j - i))
+            if near:
+                b.sees = beats[near[0]].sees
+                filled += 1
+    return filled
+
+
+def tidy(text):
+    """Layout clean-up of a finished script: no leading or trailing spaces on a line, a [PAUSE] glued to the end of a
+    sentence goes on its own line, and a [PAUSE] directly followed by another is dropped. Words are unchanged."""
+    t = "\n".join(line.strip() for line in text.split("\n"))
+    t = re.sub(r"(?m)(\S)[ \t]+\[PAUSE\]$", r"\1\n\n[PAUSE]", t)
+    t = re.sub(r"\[PAUSE\]\s*\n\s*\n\s*(?=\[PAUSE\])", "", t)
+    return re.sub(r"\n{3,}", "\n\n", t).strip()
+
+
+_FOUND = re.compile(r"\b(?:noticed|found|spotted|saw|grabbed|held|gripped|pulled out|picked up|spied)\s+(?:an?|the)\s+"
+                    r"(?:(?:set|pair|bunch|stack) of\s+)?((?:\w+\s+){0,2}\w+)", re.I)
+_PREP = {"on", "in", "at", "near", "from", "under", "beside", "behind", "with", "that", "which", "as", "and", "by", "of",
+         "to", "into", "over", "while", "when"}
+
+
+def unused_objects(text, top=3):
+    """Objects the narrator finds or notices that are never mentioned again: a simple word count, so it is only a hint
+    for the critic. Returns up to `top` head nouns."""
+    w = [_stem(x) for x in words(unmark(text))]
+    out = []
+    for m in _FOUND.finditer(unmark(text)):
+        phrase = []
+        for x in m.group(1).split():
+            if x.lower() in _PREP:
+                break
+            phrase.append(x.lower())
+        head = phrase[-1] if phrase else ""
+        if len(head) >= 4 and head not in _FUNC and w.count(_stem(head)) == 1 and head not in out:
+            out.append(head)
+    return out[:top]
+
+
 def avg_sentence_words(text) -> float:
     """Average spoken words per sentence (cues and INVENTED markers ignored). Natural narration sits near 10-15;
     below ~7 it sounds like a string of fragments, above ~20 it reads like a book."""
@@ -186,8 +234,18 @@ def repeated_rate(text, n) -> float:
     return sum(v for v in c.values() if v > 1) / len(grams)
 
 
-_PRESENT = r"am|see|hear|feel|walk|stand|look|know|think|find|kick|reach|run|take|go|watch|step|move|have|can|do|don't|cannot|stare|wipe|open|close|hold|turn|pull|push|follow|wait|listen|say|ask|tell|try|want|need|notice|realize"
-_PAST = r"was|saw|heard|felt|walked|stood|looked|knew|thought|found|kicked|reached|ran|took|went|watched|stepped|moved|had|could|did|didn't|couldn't|stared|wiped|opened|closed|held|turned|pulled|pushed|followed|waited|listened|said|asked|told|tried|wanted|needed|noticed|realized"
+_PRESENT = (
+    r"am|see|hear|feel|walk|stand|look|know|think|find|kick|reach|"
+    r"run|take|go|watch|step|move|have|can|do|don't|cannot|stare|"
+    r"wipe|open|close|hold|turn|pull|push|follow|wait|listen|say|ask|"
+    r"tell|try|want|need|notice|realize"
+)
+_PAST = (
+    r"was|saw|heard|felt|walked|stood|looked|knew|thought|found|kicked|reached|"
+    r"ran|took|went|watched|stepped|moved|had|could|did|didn't|couldn't|stared|"
+    r"wiped|opened|closed|held|turned|pulled|pushed|followed|waited|listened|said|asked|"
+    r"told|tried|wanted|needed|noticed|realized"
+)
 
 
 def tense_mix(text):

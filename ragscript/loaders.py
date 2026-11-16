@@ -17,8 +17,8 @@ _FM = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.S)
 _TS = re.compile(r"^\s*(\d{1,2}:)?\d{1,2}:\d{2}[.,]\d{3}\s*-->.*$", re.M)
 _FILLER = re.compile(r"\b(um+|uh+|erm|you know|i mean)\b,?\s*", re.I)
 # Project Gutenberg wraps every book in a licence header and footer
-_PG = re.compile(r"\*\*\* ?START OF (?:THE|THIS) PROJECT GUTENBERG[^\n]*\n(.*?)(?:\*\*\* ?END OF (?:THE|THIS) PROJECT GUTENBERG|\Z)",
-                 re.S | re.I)
+_PG = re.compile(r"\*\*\* ?START OF (?:THE|THIS) PROJECT GUTENBERG[^\n]*\n(.*?)"
+                 r"(?:\*\*\* ?END OF (?:THE|THIS) PROJECT GUTENBERG|\Z)", re.S | re.I)
 
 
 def _epub(p: Path) -> str:

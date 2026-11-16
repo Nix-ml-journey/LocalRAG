@@ -50,7 +50,8 @@ def uncited_facts(text):
     marks = [m.span() for m in re.finditer(r"\{\{INVENTED:.*?\}\}", text, re.S)]
     for s in sentences(text):
         pos = text.find(s, pos)
-        if "[S" in s or "INVENTED" in s or any(a <= pos < b for a, b in marks):  # cited, or inside an INVENTED mark that spans sentences
+        # cited, or inside an INVENTED mark that spans sentences
+        if "[S" in s or "INVENTED" in s or any(a <= pos < b for a, b in marks):
             continue
         c = CUE.sub("", s).strip()
         body = c.split(None, 1)[1] if len(c.split()) > 1 else ""  # skip the sentence-initial capital

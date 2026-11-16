@@ -36,7 +36,7 @@ script:
   wpm: 150
 
 style:                      # narration targets: the prompts and the checks both read these, so tune them here only
-  sentence_words: [10, 15]  # average spoken words per sentence
+  sentence_words: [12, 16]  # average spoken words per sentence
   max_pause_per_section: 1  # [PAUSE] cues allowed in one section
   max_pauses_per_minute: 2  # more [PAUSE] cues than this a minute is reported as halting
 
@@ -65,5 +65,5 @@ length:                     # tuned against the README results; change one at a 
   draft_max: 1.5
   token_cap: 1.8            # generation cap: tokens per budgeted word (models write 3-5x small budgets)
   polish_min: 0.7           # a polished section is accepted between polish_min and polish_max x its target
-  polish_max: 1.15
+  polish_max: 1.3 
   fit_tolerance: 0.05       # the whole script is rewritten until within +/- this share of the target (0.1 let 823 words pass for a 750 target)

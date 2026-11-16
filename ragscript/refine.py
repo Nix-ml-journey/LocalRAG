@@ -47,11 +47,15 @@ def attempt(old, produce, accept):
 def _repeat_issues(text, earlier, ck):
     out = []
     if checks.repeated_rate(text, ck["repeated_ngram"]) > ck["section_repeat"]:
-        out.append(Issue("repeats", "it repeated its own paragraphs or refrains; use each recurring detail at most 3 times in the story, changed each time"))
+        out.append(Issue("repeats", "it repeated its own paragraphs or refrains; use each recurring detail at most 3 times "
+                                     "in the story, changed each time"))
     if earlier and checks.overlap_flags(text, [earlier], 4, ck["earlier_overlap"]):
         out.append(Issue("retold", "it repeated earlier paragraphs; write only NEW events that move the story forward"))
-    if earlier and checks.drop_similar(text, earlier, ck["dedupe_similar"], ck["dedupe_similar_min"]).split() != text.split():  # words, not layout
-        out.append(Issue("similar", "it retells earlier paragraphs in new words; write only NEW events that move the story forward"))
+    # compared by words, not layout
+    kept = checks.drop_similar(text, earlier, ck["dedupe_similar"], ck["dedupe_similar_min"]) if earlier else text
+    if kept.split() != text.split():
+        out.append(Issue("similar", "it retells earlier paragraphs in new words; "
+                                    "write only NEW events that move the story forward"))
     if checks.reused_quotes(text, earlier):
         out.append(Issue("quote", "it repeated a quotation already used earlier; quote each source only once"))
     return out
@@ -107,7 +111,7 @@ class Refiner:
         parts = self.revise_weakest(parts, story, self.critique(parts, story))
         parts = self.dedupe_parts(parts, story)  # before the fit, so the fit sees the real length and makes it up
         stage("Fitting length…")
-        return self.fit_length(parts, [b["words"] for b, _ in sections], story)
+        return self.fit_length(parts, [b.words for b, _ in sections], story)
 
     def polish(self, sections, story):
         # per section: a whole-script polish call made the model loop and repeat paragraphs
@@ -115,7 +119,7 @@ class Refiner:
 
         def polish_one(bt):
             b, t = bt
-            ref = min(checks.spoken_count(t), b["words"])  # trim an oversize draft to its budget, never pad a short one
+            ref = min(checks.spoken_count(t), b.words)  # trim an oversize draft to its budget, never pad a short one
             return attempt(
                 t,
                 lambda: self.ask("polish", dict(text=t, narrator=story.narrator, genre_rules=story.genre.rules,
@@ -131,7 +135,7 @@ class Refiner:
             results = list(pool.map(polish_one, sections))
         for (b, _), (_, kept) in zip(sections, results):
             if not kept:
-                story.notes.append(f"Polish of '{b['beat']}' rejected (length/repetition); draft kept.")
+                story.notes.append(f"Polish of '{b.beat}' rejected (length/repetition); draft kept.")
         return [p for p, _ in results]
 
     def dedupe_parts(self, parts, story):
@@ -150,7 +154,9 @@ class Refiner:
         """One model call that reads the whole script and names logic holes: {section index: [Issue("logic", ...)]}.
         Empty when the model finds none or answers off format."""
         numbered = "\n\n".join(f"[{i + 1}]\n{p}" for i, p in enumerate(parts))
-        reply = self.ask("critic", dict(narrator=story.narrator, outline=story.outline, text=numbered),
+        unused = checks.unused_objects("\n\n".join(parts))
+        hints = ", ".join(unused) if unused else "(none)"
+        reply = self.ask("critic", dict(narrator=story.narrator, outline=story.outline, text=numbered, hints=hints),
                          temperature=0.2, max_tokens=300)
         out = {}
         for m in re.finditer(r"(?m)^\s*\[?(\d+)\]?\s*[:.)-]\s*(\S.*)$", reply):
@@ -181,9 +187,13 @@ class Refiner:
                                  temperature=0.5, max_tokens=int(before * 2.2)),
                 lambda n: (ln["polish_min"] * before <= checks.spoken_count(n) <= ln["polish_max"] * before
                            and len(final_issues(n, earlier, self.cfg, self.banned)) < len(issues[i])))
-            if kept:
+            logic = any(x.kind == "logic" for x in issues[i])
+            if kept and logic and i in self.critique(parts[:i] + [new] + parts[i + 1:], story):
+                story.notes.append(f"Revision of section {i + 1} rejected; "
+                                   "a second critic call still found a logic hole there.")
+            elif kept:
                 story.notes.append(f"Revised section {i + 1} to fix: {_note(issues[i])}."
-                                   + (" (a logic fix is not checked by code)" if any(x.kind == "logic" for x in issues[i]) else ""))
+                                   + (" (a second critic call found no logic hole left)" if logic else ""))
                 parts = parts[:i] + [new] + parts[i + 1:]
             else:
                 story.notes.append(f"Revision of section {i + 1} rejected; polished text kept.")

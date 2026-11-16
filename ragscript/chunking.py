@@ -1,5 +1,6 @@
 """Beat chunking with a 300-500 token sliding fallback (15% overlap)."""
 import re
+from dataclasses import dataclass
 
 BEATS = ["hook", "setup", "rising_tension", "reveal", "climax", "aftermath", "outro"]
 ALIASES = {
@@ -13,6 +14,30 @@ ALIASES = {
 }
 # "## Hook" markdown headings, or a line that is only "[BEAT: climax]"
 _HEADER = re.compile(r"^(?:#{1,4}\s+(.+)|\[BEAT:\s*([^\]\n]+)\])\s*$", re.M | re.I)
+
+
+@dataclass
+class Beat:
+    """One beat of the outline: the one place the beat's fields are named. `words` is the budget the drafter rolls
+    forward; `orig` is the planned budget it scales from."""
+    beat: str
+    words: int = 0
+    orig: int = 0
+    title: str = ""
+    summary: str = ""
+    place: str = ""    # where the narrator's body is for the whole beat
+    sees: str = ""     # what he looks at from there (a named screen stays that screen)
+    change: str = ""   # the one new fact, event or danger the beat adds
+    detail: str = ""   # "name: how it changes", the recurring detail used here
+
+    @classmethod
+    def from_json(cls, d):
+        """A beat from the model's JSON. "Rising Tension" becomes rising_tension; an unknown beat or a word count
+        that is not a positive number raises, so the outline attempt fails and is retried."""
+        beat, words = str(d["beat"]).strip().lower().replace(" ", "_"), int(d["words"])
+        if beat not in BEATS or words <= 0:
+            raise ValueError(f"bad beat {d!r}")
+        return cls(beat, words, **{k: str(d.get(k) or "") for k in ("title", "summary", "place", "sees", "change", "detail")})
 
 
 def tokens(s: str) -> int:

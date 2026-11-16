@@ -9,7 +9,7 @@ from test_length_guard import LengthLLM
 
 from ragscript import checks, chunking, config
 from ragscript.ingest import Ingest
-from ragscript.story import Story
+from ragscript.pipeline import Story
 
 CFG = config.load()
 CK = CFG["checks"]
@@ -246,7 +246,7 @@ def test_polish_and_fit_outputs_lose_invented_bracket_notes():
     from ragscript.refine import Refiner
     cfg = config.load()
     g = genre.load(cfg, "horror")
-    sections = [({"beat": "hook", "words": 20}, "I opened the door and listened for a long quiet moment in the hall.")]
+    sections = [(chunking.Beat("hook", 20), "I opened the door and listened for a long quiet moment in the hall.")]
     out = Refiner(lambda stage, vars, **kw: "I opened the door [recurring] and listened for a long quiet moment in the hall.",
                   cfg, []).polish(sections, Story("b", g, "Eli", 750, 5))
     assert "[recurring]" not in out[0]
@@ -286,7 +286,7 @@ def test_report_measures_the_script_and_only_fact_checks_grounded_genres():
     plain = report.build(script, grounded=False, **kw)
     assert plain.uncited_facts == [] and plain.pause_cues == 1 and plain.invented == ["A cold wind rose."]
     assert report.build(script, grounded=True, **kw).uncited_facts == ["Captain Briggs sailed in 1872."]
-    assert plain.sentence_range == "10-15"
+    assert plain.sentence_range == "12-16"
 
 
 def test_attempt_keeps_an_accepted_rewrite_cleans_it_and_reverts_a_rejected_one():
@@ -298,14 +298,14 @@ def test_attempt_keeps_an_accepted_rewrite_cleans_it_and_reverts_a_rejected_one(
 
 
 def test_report_decides_which_warnings_to_show_and_render_only_prints_them():
-    from ragscript import render, report
+    from ragscript import report
     cfg = config.load()
     kw = dict(target_words=10, minutes=5, refs=[], cited_text={}, grounded=False, banned=[], cfg=cfg, notes=[])
     calm = report.build("I walked in. [PAUSE] Then I left.", **kw)
     assert calm.flags == [] and calm.pauses_per_minute == 0.2
     halting = report.build("I walked in. " + "[PAUSE] I stood. " * 12, **kw)
     assert halting.flags and "[PAUSE] cues in 5 minutes" in halting.flags[0]
-    md = render.render(render.Doc("b", "horror", 5, "n", {}, [(0, "c")], {}), "text", halting)
+    md = report.render(report.Doc("b", "horror", 5, "n", {}, [(0, "c")], {}), "text", halting)
     assert "- " + halting.flags[0] in md
 
 
@@ -328,20 +328,20 @@ def test_eval_ranks_are_computed_once_and_give_both_the_hit_and_the_top_k():
 
 def test_rolling_budget_spreads_an_overshoot_over_the_beats_still_to_write():
     from ragscript.draft import Drafter
-    beats = [{"words": 100, "orig": 100}, {"words": 100, "orig": 100}, {"words": 100, "orig": 100}]
+    beats = [chunking.Beat("hook", 100, 100) for _ in range(3)]
     sections = [(beats[0], "word " * 250)]  # 250 written for a 100-word beat: counts only up to its plan
     Drafter._rebudget(beats, 1, sections, 300)
-    assert beats[1]["words"] == beats[2]["words"] == 100 * 200 // 200  # 100 done, 200 left for 200 planned
+    assert beats[1].words == beats[2].words == 100 * 200 // 200  # 100 done, 200 left for 200 planned
     sections = [(beats[0], "word " * 40)]  # an undershoot is made up by the later beats
     Drafter._rebudget(beats, 1, sections, 300)
-    assert beats[1]["words"] > 100
+    assert beats[1].words > 100
 
 
 def test_prompt_filling_uses_config_values_and_leaves_unknown_placeholders():
     from ragscript import prompts
     cfg = config.load()
     out = prompts.fill("range <<sentence_range>>, pause <<max_pause>>, <<unknown>>, <<name>>", cfg, (), name="<<banned>>")
-    assert out == "range 10-15, pause 1, <<unknown>>, <<banned>>"
+    assert out == "range 12-16, pause 1, <<unknown>>, <<banned>>"
 
 
 def test_a_paragraph_retold_in_new_words_is_dropped_but_a_continuation_is_kept():
@@ -408,10 +408,10 @@ def test_repeated_wording_lists_unchanged_returns_only():
 
 def test_outline_issues_find_logic_holes():
     from ragscript import checks
-    beats = [dict(beat="hook", place="booth", change="the monitor shows him early", detail="hum: steady"),
-             dict(beat="setup", place="", change="the monitor shows him early again", detail="hum: louder"),
-             dict(beat="reveal", place="hall", change="a door opens by itself", detail="hum: stalls"),
-             dict(beat="climax", place="closet", change="the handle turns slowly now", detail="hum: dies")]
+    beats = [chunking.Beat(beat="hook", place="booth", change="the monitor shows him early", detail="hum: steady"),
+             chunking.Beat(beat="setup", place="", change="the monitor shows him early again", detail="hum: louder"),
+             chunking.Beat(beat="reveal", place="hall", change="a door opens by itself", detail="hum: stalls"),
+             chunking.Beat(beat="climax", place="closet", change="the handle turns slowly now", detail="hum: dies")]
     found = " | ".join(checks.outline_issues(beats, 3))
     assert 'no "place"' in found and "almost the same thing" in found and "again right after" in found
     assert 'the detail "hum" is used in 4 beats' in found
@@ -442,9 +442,9 @@ def test_detail_returns_counts_paragraphs():
 
 def test_outline_issue_for_a_screen_beat_without_sees():
     from ragscript import checks
-    beat = dict(beat="reveal", place="booth", change="the double turns its head", summary="He watches the monitor.")
+    beat = chunking.Beat(beat="reveal", place="booth", change="the double turns its head", summary="He watches the monitor.")
     assert any('"sees"' in x for x in checks.outline_issues([beat], 3))
-    assert not any('"sees"' in x for x in checks.outline_issues([dict(beat, sees="the hallway feed on the booth monitor")], 3))
+    assert not any('"sees"' in x for x in checks.outline_issues([chunking.Beat(**{**beat.__dict__, "sees": "the hallway feed on the booth monitor"})], 3))
 
 
 def test_detail_returns_ignores_articles_in_the_name():
@@ -495,3 +495,88 @@ def test_detail_returns_ignores_a_name_word_that_is_everywhere():
     from ragscript import checks
     paras = [f"The floor creaked in room {i}." for i in range(6)] + ["The wax smell came back.", "A wax sting stayed."]
     assert checks.detail_returns("\n\n".join(paras), ["floor wax"]) == [("floor wax", 2)]
+
+
+def test_fill_sees_copies_the_nearest_screen():
+    from ragscript import checks
+    beats = [chunking.Beat(beat="hook", summary="He watches the monitor.", sees="Monitor 4"),
+             chunking.Beat(beat="setup", summary="He paces the hall.", sees=""),
+             chunking.Beat(beat="reveal", summary="The screen flickers.", sees="")]
+    assert checks.fill_sees(beats) == 1 and beats[2].sees == "Monitor 4" and beats[1].sees == ""
+
+
+def test_tidy_cleans_layout_but_keeps_the_words():
+    from ragscript import checks
+    raw = " First line.  \n\n  It moved. [PAUSE]\n\nThen nothing.\n\n[PAUSE]\n\n[PAUSE] The end."
+    out = checks.tidy(raw)
+    assert out == "First line.\n\nIt moved.\n\n[PAUSE]\n\nThen nothing.\n\n[PAUSE] The end."
+    assert checks.spoken_count(out) == checks.spoken_count(raw)
+
+
+def test_unused_objects_lists_an_object_found_and_never_used():
+    from ragscript import checks
+    text = "I noticed a set of brass keys on the floor. I walked on. The door opened. I held a flashlight and the flashlight shook."
+    assert checks.unused_objects(text) == ["keys"]
+
+
+def test_a_logic_rewrite_is_kept_only_when_a_second_critic_call_finds_no_hole(tmp_path):
+    from tests.support import FakeLLM
+
+    def run(second_answer):
+        class L(FakeLLM):
+            calls = 0
+
+            def chat(self, prompt, **kw):
+                if kw.get("stage") == "critic":
+                    self.calls += 1
+                    return "2: the narrator is in two places at once" if self.calls == 1 else second_answer
+                return super().chat(prompt, **kw)
+
+        return write(pipeline(tmp_path, L()))["markdown"]
+
+    assert "second critic call found no logic hole left" in run("NONE")
+    assert "second critic call still found a logic hole" in run("2: still two places")
+
+
+def _outline_with(holes):
+    beats = [chunking.Beat(b, 100, place="" if i < holes else f"room {i}",
+                           change=f"event {i} {'alpha beta gamma delta epsilon zeta eta'.split()[i]} {i * 9}")
+             for i, b in enumerate(chunking.BEATS)]
+    return {"narrator": "Eli", "beats": beats}
+
+
+def _build(first, second):
+    from ragscript.pipeline import build_outline
+    answers, notes = iter([first, second]), []
+    narrator, beats = build_outline(lambda temps, **kw: next(answers), config.load(), 700, notes)
+    return beats, notes
+
+
+def test_build_outline_keeps_a_repair_with_fewer_holes():
+    beats, notes = _build(_outline_with(2), _outline_with(0))
+    assert all(b.place for b in beats) and notes == []
+    assert sum(b.words for b in beats) == 700 and all(b.orig == b.words for b in beats)
+
+
+def test_build_outline_drops_a_repair_that_is_no_better():
+    beats, notes = _build(_outline_with(1), _outline_with(3))
+    assert sum(not b.place for b in beats) == 1 and "Outline logic problems left" in notes[0]
+
+
+def test_beat_from_json_normalises_the_id_and_rejects_bad_input():
+    import pytest
+    b = chunking.Beat.from_json({"beat": "Rising Tension", "words": "120", "summary": "s", "place": None})
+    assert (b.beat, b.words, b.place) == ("rising_tension", 120, "")
+    for bad in ({"beat": "middle", "words": 10}, {"beat": "hook", "words": 0}, {"beat": "hook", "words": "many"}):
+        with pytest.raises(ValueError):
+            chunking.Beat.from_json(bad)
+
+
+def test_save_never_overwrites_an_earlier_script(tmp_path, monkeypatch):
+    import time
+    from ragscript import report
+    monkeypatch.setattr(time, "strftime", lambda fmt: "0101-000001")
+    a = report.save(tmp_path, "horror", 5, "A Brief!", "one", {"k": 1})
+    b = report.save(tmp_path, "horror", 5, "A Brief!", "two", {"k": 2})
+    assert a != b and a.read_text(encoding="utf-8") == "one" and b.read_text(encoding="utf-8") == "two"
+    assert a.name.startswith("horror-5min-a-brief-") and a.with_suffix(".trace.json").exists()

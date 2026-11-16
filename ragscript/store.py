@@ -1,5 +1,6 @@
 """The search index: ChromaDB (persistent) for dense vectors and an in-memory BM25 index built from it.
-Filling it from files is ingest.py's job; this module only stores, removes and finds chunks."""
+Filling it from files is ingest.py's job; this module stores, removes and finds chunks, and `Retriever` fuses the dense
+and BM25 rankings (reciprocal rank fusion)."""
 import re
 
 import chromadb
@@ -26,15 +27,18 @@ def tok(s: str):
 
 
 class Store:
-    def __init__(self, cfg: dict):
+    def __init__(self, cfg: dict, embed=None):
+        """`embed(texts) -> vectors` defaults to bge-m3 on the CPU; a test passes a fake so search runs offline."""
         self.cfg = cfg
+        self._embed = embed or (lambda texts: embedder(cfg).encode(
+            texts, normalize_embeddings=True, batch_size=8).tolist())
         self.client = chromadb.PersistentClient(path=str(config.path(cfg, "chroma_dir")))
         self.cols = {n: self.client.get_or_create_collection(n, metadata={"hnsw:space": "cosine"})
                      for n in COLLECTIONS}
         self._bm25 = {}
 
     def embed(self, texts):
-        return embedder(self.cfg).encode(texts, normalize_embeddings=True, batch_size=8).tolist()
+        return self._embed(texts)
 
     def counts(self):
         return {n: c.count() for n, c in self.cols.items()}
@@ -94,3 +98,26 @@ class Store:
         top = sorted((j for j in range(len(ids)) if scores[j] > 0 and self.matches(metas[j], genre, beat)),
                      key=lambda j: -scores[j])[:n]
         return [{"id": ids[j], "text": texts[j], "meta": metas[j]} for j in top]
+
+
+class Retriever:
+    def __init__(self, store, cfg):
+        self.store, self.cfg = store, cfg
+
+    def search(self, coll, query, genre, beat=None, k=None):
+        r = self.cfg["retrieval"]
+        k = k or r["final_k"]
+        col = self.store.cols[coll]
+        if col.count() == 0:
+            return []
+        dense = [{"id": d["id"], "text": d["text"], "meta": d["meta"]}
+                 for d in self.store.dense(col, query, r["candidates"], Store.where(genre, beat))]
+        lexical = self.store.lexical(coll, query, r["candidates"], genre, beat)
+        docs = {d["id"]: d for d in dense + lexical}
+
+        fused = {}
+        for ranked in (dense, lexical):
+            for pos, d in enumerate(ranked):
+                fused[d["id"]] = fused.get(d["id"], 0) + 1 / (r["rrf_k"] + pos + 1)
+        out = [docs[i] for i in sorted(fused, key=fused.get, reverse=True)]
+        return out[:k]
