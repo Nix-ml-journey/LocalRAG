@@ -36,7 +36,11 @@ def create_app(store) -> FastAPI:
         # shortcut: dense search only, no genre filter or BM25; upgrade if lore gets large or multi-genre
         rows = []
         for col in (store.cols["lore"], episodes):  # n from each, so history can't crowd out lore or reverse
-            for d in store.dense(col, req.query, req.n_results, req.where):
+            try:
+                found = store.dense(col, req.query, req.n_results, req.where)
+            except Exception as e:  # a filter Chroma cannot read is the caller's mistake
+                raise HTTPException(422, f"bad where filter: {e}")
+            for d in found:
                 rows.append({"id": d["id"], "document": d["text"], "metadata": {"Title": d["meta"].get("source", ""), **d["meta"]},
                              "distance": d["distance"]})
         rows.sort(key=lambda row: row["distance"])

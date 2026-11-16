@@ -3,6 +3,7 @@ This module orchestrates; each stage's work lives in its own module."""
 import json
 import logging
 import re
+import time
 
 from . import checks, chunking, config, grounding, prompts, render, report, vram
 from . import genre as genre_pack
@@ -162,7 +163,8 @@ class Pipeline:
         md = render.render(doc, script, rep)
         out = config.path(self.cfg, "output_dir")
         out.mkdir(exist_ok=True)
-        path = out / f"{slug}-{minutes}min-{re.sub(r'[^a-z0-9]+', '-', brief.lower())[:50].strip('-') or 'script'}.md"
+        name = re.sub(r'[^a-z0-9]+', '-', brief.lower())[:50].strip('-') or 'script'
+        path = out / f"{slug}-{minutes}min-{name}-{time.strftime('%m%d-%H%M%S')}.md"  # a rerun never overwrites an earlier script
         path.write_text(md, encoding="utf-8")
         trace = dict(brief=brief, outline=beats, drafted=[t for _, t in sections], refined=parts, notes=notes)
         path.with_suffix(".trace.json").write_text(json.dumps(trace, indent=1, default=str), encoding="utf-8")  # replay a stage without re-running the model

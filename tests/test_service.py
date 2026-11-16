@@ -62,3 +62,8 @@ def test_history_query_can_be_limited_to_one_series(tmp_path):
     body = {"query": "ship", "n_results": 5, "where": {"series_id": "a"}}
     ids = [r["id"] for r in c.post("/vector_store/query", json=body).json()["results"]]
     assert ids == ["ep_a"]
+
+
+def test_a_bad_where_filter_is_a_422_not_a_server_error(tmp_path):
+    body = {"query": "castle", "where": {"$bogus": 1}}
+    assert client(tmp_path).post("/vector_store/query", json=body).status_code == 422

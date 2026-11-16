@@ -136,7 +136,7 @@ def outline_issues(beats, limit):
         for k in ("place", "change"):
             if not str(b.get(k, "")).strip():
                 out.append(f'{tag} has no "{k}"')
-        if re.search(r"\b(monitors?|screens?|cameras?|feed|footage)\b", str(b.get("summary", "")), re.I) and not str(b.get("sees", "")).strip():
+        if re.search(r"\b(monitors?|screens?|cameras?|footage)\b", str(b.get("summary", "")), re.I) and not str(b.get("sees", "")).strip():
             out.append(f'{tag} shows a screen or camera but has no "sees" saying what it shows')
         ch = _content_set(str(b.get("change", "")))
         if prev and min(len(ch), len(prev)) >= 3 and len(ch & prev) / min(len(ch), len(prev)) >= 0.6:

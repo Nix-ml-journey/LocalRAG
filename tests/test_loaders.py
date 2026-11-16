@@ -48,7 +48,6 @@ def test_unhyphenate_joins_split_words_but_keeps_compounds():
 
 
 def test_splitter_does_not_end_a_sentence_at_a_closing_quote_before_a_lowercase_word():
-    from ragscript import checks
     assert len(txt.sentences('He read "J. Habakuk Jephson" aloud. It ended.')) == 2
 
 

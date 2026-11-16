@@ -7,7 +7,7 @@ from support import make_pipeline as pipeline
 from support import write_script as write
 from test_length_guard import LengthLLM
 
-from ragscript import checks, chunking, config, grounding
+from ragscript import checks, chunking, config
 from ragscript.ingest import Ingest
 from ragscript.story import Story
 
@@ -451,3 +451,41 @@ def test_detail_returns_ignores_articles_in_the_name():
     from ragscript import checks
     text = "The heavy door shut.\n\nThe heavy rain fell.\n\nI saw the turnstile."
     assert checks.detail_returns(text, ["heavy rattle of the turnstile"]) == []
+
+
+def _outline_with_holes(llm_cls_calls, repaired_holes):
+    """A FakeLLM whose first outline has one beat without a place; the repair has `repaired_holes` such beats."""
+    class L(FakeLLM):
+        def chat(self, prompt, **kw):
+            out = super().chat(prompt, **kw)
+            if kw.get("stage") != "outline":
+                return out
+            llm_cls_calls.append(1)
+            data = json.loads(out)
+            holes = 1 if len(llm_cls_calls) == 1 else repaired_holes
+            for b in data["beats"][:holes]:
+                b["place"] = ""
+            return json.dumps(data)
+
+    return L()
+
+
+def test_outline_repair_is_kept_when_it_has_fewer_holes(tmp_path):
+    calls = []
+    md = write(pipeline(tmp_path, _outline_with_holes(calls, 0)))["markdown"]
+    assert len(calls) == 2 and "Outline logic problems left" not in md
+
+
+def test_outline_repair_is_dropped_when_it_is_no_better(tmp_path):
+    calls = []
+    md = write(pipeline(tmp_path, _outline_with_holes(calls, 2)))["markdown"]
+    assert len(calls) == 2 and "Outline logic problems left" in md
+
+
+def test_two_runs_of_the_same_brief_keep_both_files(tmp_path, monkeypatch):
+    import time
+    stamps = iter(["0101-000001", "0101-000002"])
+    monkeypatch.setattr(time, "strftime", lambda fmt: next(stamps))
+    a = write(pipeline(tmp_path))["path"]
+    b = write(pipeline(tmp_path))["path"]
+    assert a != b and a.exists() and b.exists()

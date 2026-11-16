@@ -106,7 +106,6 @@ class RetoldLLM(LengthLLM):
 
 
 def test_a_retold_section_is_dropped_before_the_fit_which_makes_up_the_length(tmp_path):
-    from ragscript import config
     llm = RetoldLLM(section_words=110)  # 7 x 110 = 770 words; without the retelling 660, below the 675 floor
     md = write_script(make_pipeline(tmp_path, llm))["markdown"]
     script = script_of(md)

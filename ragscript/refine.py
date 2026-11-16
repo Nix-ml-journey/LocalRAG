@@ -182,7 +182,8 @@ class Refiner:
                 lambda n: (ln["polish_min"] * before <= checks.spoken_count(n) <= ln["polish_max"] * before
                            and len(final_issues(n, earlier, self.cfg, self.banned)) < len(issues[i])))
             if kept:
-                story.notes.append(f"Revised section {i + 1} to fix: {_note(issues[i])}.")
+                story.notes.append(f"Revised section {i + 1} to fix: {_note(issues[i])}."
+                                   + (" (a logic fix is not checked by code)" if any(x.kind == "logic" for x in issues[i]) else ""))
                 parts = parts[:i] + [new] + parts[i + 1:]
             else:
                 story.notes.append(f"Revision of section {i + 1} rejected; polished text kept.")
