@@ -136,6 +136,11 @@ class Pipeline:
         narrator, beats = build_outline(ask_json, self.cfg, total, notes)
         return narrator, beats, total
 
+    def read(self, script, brief, genre, minutes):
+        """A listener's verdict on a finished script, used by the eval run: the model's scored lines as text."""
+        return self._ask("reader", dict(genre=genre, brief=brief, minutes=minutes, script=script),
+                         temperature=0.1, max_tokens=700)
+
     # ---- stages 3 to 6 -------------------------------------------------
     def write(self, brief, genre, minutes, hook, style="", progress=print):
         g = genre_pack.load(self.cfg, genre, style)

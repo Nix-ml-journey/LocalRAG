@@ -629,3 +629,16 @@ NONE of this matters
     ref = Refiner(lambda stage, vars_, **kw: reply, config.load(), [])
     found = ref.critique(["a", "b", "c", "d", "e"], SimpleNamespace(narrator="n", outline="o"))
     assert sorted(found) == [1, 2, 3, 4] and found[2][0].message == "an object is never used again"
+
+
+def test_reader_scores_are_parsed_and_the_script_is_cut_from_the_markdown():
+    from eval.run_eval import parse_reader, script_of
+    reply = "Premise: 4 | fine | \"x\"\nLogic: 2 | bad | \"y\"\nEnding: 9 | off scale | \"z\"\nVoice: 3 | ok | \"w\""
+    assert parse_reader(reply) == {"Premise": 4, "Logic": 2, "Voice": 3}
+    assert script_of("# T\n\n## Script\n\nOne.\n\nTwo.\n\n## Chapters\n- a") == "One.\n\nTwo."
+
+
+def test_reader_prompt_fills_every_placeholder():
+    from ragscript import config, prompts
+    out = prompts.stage(config.load(), "reader", (), genre="horror", brief="b", minutes=5, script="S")
+    assert "<<" not in out and "horror" in out and "\nS\n" in out

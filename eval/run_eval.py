@@ -3,6 +3,7 @@ word-count accuracy, repeated phrases, [PAUSE] density, tense switches and sente
 import dataclasses
 import json
 import logging
+import re
 import shutil
 import statistics
 
@@ -35,14 +36,30 @@ def top_k(all_ranks):
     flat = [r for rk in all_ranks for r in rk.values()]
     return {f"top{x}": sum(r <= x for r in flat) / len(flat) for x in (1, 3, 10)}
 
+AREAS = ("Premise", "Logic", "Tension", "Ending", "Voice", "Freshness")
+
+
+def script_of(md):
+    """The narration of a saved script: the text between its '## Script' heading and the next '## ' heading."""
+    m = re.search(r"(?ms)^## Script\s*\n(.*?)(?=^## |\Z)", md)
+    return m.group(1).strip() if m else md
+
+
+def parse_reader(reply):
+    """{area: score} from the reader's reply. An area the reader left out or scored off the 1-5 scale is missing."""
+    scores = {a: re.search(rf"(?mi)^\s*{a}\s*:\s*([1-5])\b", reply) for a in AREAS}
+    return {a: int(m.group(1)) for a, m in scores.items() if m}
+
+
 def _over_limit(s):
     """Details over the return limit in one script: the same words coming back, or a detail in too many paragraphs."""
     return sum(n > s.motif_limit for _, n in s.repeated_wording + s.detail_returns)
 
 
-def run(retrieval_only=False, ids=None, minutes=None, label=None):
+def run(retrieval_only=False, ids=None, minutes=None, label=None, reader=True):
     """ids: only these brief ids; minutes: write every brief at this length; label: also copy the scripts and a
-    stats.json to output/<label>/ (a quick regression run: `cli.py eval --ids b01,b03,b08 --minutes 5 --label x`)."""
+    stats.json to output/<label>/ (a quick regression run: `cli.py eval --ids b01,b03,b08 --minutes 5 --label x`);
+    reader: also have the model score each script as a listener (prompts/stages/reader.md, one extra call per brief)."""
     logging.basicConfig(level=logging.WARNING)
     briefs = [b for b in load_briefs() if not ids or b["id"] in ids]
     pl = Pipeline.from_config()
@@ -50,7 +67,7 @@ def run(retrieval_only=False, ids=None, minutes=None, label=None):
     dest = config.ROOT / "output" / label if label else None
     if dest:
         dest.mkdir(parents=True, exist_ok=True)
-    hits, all_ranks, reports = [], [], []
+    hits, all_ranks, reports, read_scores = [], [], [], []
     for b in briefs:
         rk = ranks(pl, b)
         all_ranks.append(rk)
@@ -64,6 +81,13 @@ def run(retrieval_only=False, ids=None, minutes=None, label=None):
             reports.append(s)
             if dest:
                 shutil.copy(r["path"], dest / r["path"].name)
+            if reader:
+                verdict = pl.read(script_of(r["markdown"]), b["brief"], b["genre"], minutes or b["minutes"])
+                scores = parse_reader(verdict)
+                read_scores.append(scores)
+                line += f" reader={sum(scores.values())}/30" if len(scores) == len(AREAS) else " reader=n/a"
+                if dest:
+                    (dest / f"{r['path'].stem}.reader.txt").write_text(verdict, encoding="utf-8")
             line += (f" words={s.words}/{s.target_words} rep={s.repeated_phrase_rate:.1%}"
                      f" pauses/min={s.pauses_per_minute:.1f} tense={'MIXED' if s.mixed_tense else 'ok'}"
                      f" sent={s.avg_sentence_words} rep-outside={s.repeated_outside_setting:.1%} same-words={len(s.repeated_wording)}"
@@ -81,6 +105,10 @@ def run(retrieval_only=False, ids=None, minutes=None, label=None):
         same_words = statistics.mean(len(s.repeated_wording) for s in reports)
         print(f"Details returning in the same words (mean per script): {same_words:.1f}   "
               f"scripts with one over the limit: {sum(_over_limit(s) > 0 for s in reports)}/{len(reports)}")
+        if any(read_scores):
+            print("Reader score (mean of 1-5): " + "  ".join(
+                f"{a}={statistics.mean(s[a] for s in read_scores if a in s):.1f}" for a in AREAS
+                if any(a in s for s in read_scores)))
         if dest:
             (dest / "stats.json").write_text(json.dumps([dataclasses.asdict(s) for s in reports], indent=1), encoding="utf-8")
             print(f"saved to {dest}")
