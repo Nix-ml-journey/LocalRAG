@@ -153,6 +153,12 @@ def render(doc: Doc, script, report) -> str:
     return "\n".join(L) + "\n"
 
 
+def script_of(md):
+    """The narration of a rendered file: the text between its '## Script' heading and the next '## ' heading."""
+    m = re.search(r"(?ms)^## Script\s*\n(.*?)(?=^## |\Z)", md)
+    return m.group(1).strip() if m else md
+
+
 def save(out_dir, slug, minutes, brief, md, trace):
     """Write the markdown and, next to it, the run's trace as JSON (so a later stage can be replayed without the
     model); returns the markdown path. The name carries a time stamp, and a counter if two runs share a second, so a

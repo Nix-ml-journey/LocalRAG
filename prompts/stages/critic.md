@@ -16,7 +16,7 @@ Find logic holes a listener would notice:
 - An object is named and then never matters.
 - A section re-does what an earlier section already did.
 - A fact contradicts an earlier fact.
-- The ending does not follow from the section before it: a threat arrives and then the place is simply empty, or the final image uses an object or fact the story never set up, or the last events do not connect to each other.
+- The ending does not follow from the section before it: the last image uses an object or fact the story never set up, or the story simply stops, or the last events do not connect to each other.
 
 Rules:
 - Report at most 3 problems, the most serious first, one per line, written exactly as "<section number>: <the problem in one sentence>".

@@ -39,7 +39,7 @@ def test_outline_with_loose_beat_names_and_bad_words_is_fixed_or_retried(tmp_pat
                 self.outlines += 1
                 names = [b.title().replace("_", " ") for b in BEATS]  # "Hook", "Rising Tension"...
                 words = "about 100" if self.outlines == 1 else 107
-                beats = [{"beat": n, "title": n, "words": words, "summary": "s", "place": f"room {i}", "change": f"new event {i * 11} {'ab cd ef gh ij kl mn'.split()[i]} xyz", "detail": ""}
+                beats = [{"beat": n, "title": n, "words": words, "summary": "s", "place": f"room {i}", "change": f"new event {i * 11} {'ab cd ef gh ij kl mn'.split()[i]} xyz {'lantern' * (i in (0, 6))}", "detail": ""}
                      for i, n in enumerate(names)]
                 return json.dumps({"narrator": "Eli", "beats": beats})
             if kw.get("stage") == "section":
@@ -426,8 +426,14 @@ def test_outline_last_beat_must_use_something_shown_earlier():
              beat("rising_tension", "footsteps near the door"), beat("reveal", "the face turns"),
              beat("climax", "the handle rattles"), beat("aftermath", "he hides inside the closet")]
     bad = checks.outline_issues(story + [beat("outro", "silence settles everywhere")], 3)
+    # a word that most beats share (the narrator's name, the setting) is no setup for the ending
+    common = [beat(n, f"Elias {s}") for n, s in (("hook", "sees a jacket"), ("setup", "checks logs"),
+                                                  ("rising_tension", "hears steps"), ("reveal", "sees the face"))]
+    assert checks.outline_issues(common + [beat("climax", "Elias runs"), beat("aftermath", "Elias hides"),
+                                           beat("outro", "Elias waits")], 3)
     good = checks.outline_issues(story + [beat("outro", "the navy jacket hangs empty")], 3)
-    assert any("last beat" in x for x in bad) and not any("last beat" in x for x in good)
+    plural = checks.outline_issues([beat("hook", "a worn boot by the door")] + story[1:] + [beat("outro", "the boots stand empty")], 3)
+    assert any("last beat" in x for x in bad) and not any("last beat" in x for x in good + plural)
 
 
 def test_dropped_then_used_finds_an_object_used_after_it_was_dropped():
@@ -436,6 +442,12 @@ def test_dropped_then_used_finds_an_object_used_after_it_was_dropped():
              "I picked up the radio and held it close."]
     assert checks.dropped_then_used(parts) == [("keys", 1)]
     assert checks.dropped_then_used(["I dropped my keys.", "I grabbed the keys and gripped them."]) == []
+    # an idiom, an abstract loss and an object another person takes are no holes
+    for text in ("I threw my hands up in fear.", "I lost the thread of the story."):
+        assert checks.dropped_then_used([text, "I looked up and held the thread tight."]) == []
+    assert checks.dropped_then_used(["I dropped the keys.", "He took the keys and held them."]) == []
+    for text in ("I dropped my keys again.", "I dropped my keys then ran."):  # a small word after the object
+        assert checks.dropped_then_used([text, "I gripped the keys."]) == [("keys", 1)]
 
 
 def test_critic_issues_reach_the_revision_prompt(tmp_path):
@@ -560,7 +572,7 @@ def test_a_logic_rewrite_is_kept_only_when_a_second_critic_call_finds_no_hole(tm
 
 def _outline_with(holes):
     beats = [chunking.Beat(b, 100, place="" if i < holes else f"room {i}",
-                           change=f"event {i} {'alpha beta gamma delta epsilon zeta eta'.split()[i]} {i * 9}")
+                           change=f"event {i} {'alpha beta gamma delta epsilon zeta eta'.split()[i]} {i * 9} {'lantern' * (i in (0, 6))}")
              for i, b in enumerate(chunking.BEATS)]
     return {"narrator": "Eli", "beats": beats}
 
@@ -640,5 +652,8 @@ def test_reader_scores_are_parsed_and_the_script_is_cut_from_the_markdown():
 
 def test_reader_prompt_fills_every_placeholder():
     from ragscript import config, prompts
-    out = prompts.stage(config.load(), "reader", (), genre="horror", brief="b", minutes=5, script="S")
-    assert "<<" not in out and "horror" in out and "\nS\n" in out
+    out = prompts.stage(config.load(), "reader", (), genre="horror", brief="b", script="S")
+    assert "<<" not in out and "horror" in out and "\nS\n" in out and "minutes" not in out
+    from eval.run_eval import AREAS, parse_reader
+    example = out[out.index("The layout below"):]  # the prompt's own sample reply must parse into every scored area
+    assert len(parse_reader(example)) == len(AREAS)

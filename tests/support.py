@@ -81,8 +81,3 @@ def make_pipeline(tmp_path, llm=None, retriever=None, banned=()):
 def write_script(p, genre="horror"):
     """Run the whole pipeline on a fixed brief; returns the result dict (path, markdown, stats)."""
     return p.write("a guard keeps seeing himself", genre, 5, "hook text", progress=lambda m: None)
-
-
-def script_of(markdown):
-    """The ## Script section of an output file."""
-    return markdown[markdown.index("## Script") + 9: markdown.index("## Chapters")].strip()

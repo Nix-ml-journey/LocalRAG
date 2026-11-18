@@ -6,9 +6,9 @@
 
 ## Context
 
-The project writes first-person YouTube story scripts (5 to 20 minutes, about 150 words per minute) with a local model (gemma4:12b through Ollama). Retrieval is hybrid (bge-m3 dense plus BM25, merged with reciprocal rank fusion) over style examples, lore and hooks. The pipeline is: hooks, then a JSON outline of 7 beats, then one model call per beat with a rolling word budget and a rolling summary, then per-section polish, one critic call that lists logic holes, a rewrite of the weakest section, a repeat guard, and a length-fit rewrite. Code checks run on repeated phrases, near-duplicate paragraphs, tense and word count.
+The project writes first-person YouTube story scripts (5 to 20 minutes, about 150 words per minute) with a local model (gemma4:12b through Ollama). Retrieval is hybrid (bge-m3 dense plus BM25, merged with reciprocal rank fusion) over style examples, lore and hooks. The pipeline is: hooks, then a JSON outline of 7 beats, then one model call per beat with a rolling word budget and a rolling summary, then per-section polish, one critic call that lists logic holes (a second critic call checks any rewrite of them), a rewrite of the weakest section, a repeat guard, and a length-fit rewrite. Code checks run on repeated phrases, near-duplicate paragraphs, tense, word count, an outline whose last beat reuses nothing from the earlier beats, and a dropped object that is used again. `cli.py eval` also asks the same model, as a strict editor, to score each script from 1 to 5 on six areas.
 
-Already tried: the outline gives each beat a `place` (where the narrator is), `sees` (which screen he watches), `change` (what is new) and `detail` (which recurring detail); code finds outline holes and asks for one repair. The length tolerance is now 5% and polish may grow a section by at most 15%. On three 5-minute briefs this gave word accuracy 97% and repeat rate 3.1%, but the stories still read as uneven.
+Already tried: the outline gives each beat a `place` (where the narrator is), `sees` (which screen he watches), `change` (what is new) and `detail` (which recurring detail); code finds outline holes and asks for one repair. The length tolerance is now 5% and polish may grow a section by at most 30%. On three 5-minute briefs this gave word accuracy 97% and repeat rate 3.1%, but the stories still read as uneven. The last three horror runs landed at 98.4-99.9% accuracy and 1.8-3.5% repeats; their endings went from an empty room to a dropped-keys contradiction to an ending that follows, so the outline and critic changes helped but did not settle it.
 
 Two recent horror outputs for the same brief ("a night-shift security guard keeps seeing himself on the monitors a few seconds before he walks into each room"):
 
@@ -23,7 +23,7 @@ About 30 minutes. Short answers are fine; a ranked list is enough where I ask fo
 
 ### Rank these fixes by expected gain in story quality per unit of effort.
 
-The fixes still open: (1) a critic pass whose rewrite is checked by a second critic call, not trusted; (2) writing the whole script in one pass, with the outline as a plan, instead of one call per beat; (3) generating several outlines or drafts and picking the best with a model judge; (4) a larger or different writing model; (5) few-shot examples of complete good stories in the section prompt.
+The fixes still open: (1) writing the whole script in one pass, with the outline as a plan, instead of one call per beat; (2) generating several outlines or drafts and picking the best with a model judge (the editor score above is lenient on gemma4:12b: it gave Premise 5 almost everywhere and missed a dropped-keys contradiction, so a judge may need a larger model); (3) a larger or different writing model; (4) few-shot examples of complete good stories in the section prompt. The critic pass with a second-call check is done.
 
 _Why this matters: each fix costs time on a 12B model that runs at about 46 tokens per second, so I can try only one or two._
 

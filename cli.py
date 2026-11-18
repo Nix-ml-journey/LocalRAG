@@ -26,7 +26,7 @@ def main():
     e.add_argument("--ids", help="comma-separated brief ids from eval/briefs.yaml, e.g. b01,b03 (default: all)")
     e.add_argument("--minutes", type=int, choices=DURATIONS, help="write every brief at this length instead of its own")
     e.add_argument("--label", help="copy the written scripts and a stats.json to output/<label>/")
-    e.add_argument("--no-reader", action="store_true", help="skip the model's listener score of each script")
+    e.add_argument("--no-reader", action="store_true", help="skip the model's editor score of each script")
     a = ap.parse_args()
 
     if a.cmd == "eval":

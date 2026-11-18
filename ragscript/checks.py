@@ -150,8 +150,10 @@ def outline_issues(beats, limit):
         prev_detail = name
     out += [f'the detail "{n}" is used in {c} beats; at most {limit}' for n, c in uses.items() if c > limit]
     if len(beats) >= 4:  # the final image must grow from something an earlier beat already showed
-        seen = set().union(*(_content_set(f"{b.title} {b.summary} {b.sees} {b.change} {b.detail}") for b in beats[:-2]))
-        if not _content_set(f"{beats[-1].summary} {beats[-1].change}") & seen:
+        sets = [{_stem(w) for w in _content_set(f"{b.title} {b.summary} {b.sees} {b.change} {b.detail}")} for b in beats]
+        common = {w for w, n in Counter(w for s in sets for w in s).items() if n >= len(beats) / 2}  # name, setting
+        seen = set().union(*sets[:-2]) - common
+        if not ({_stem(w) for w in _content_set(f"{beats[-1].summary} {beats[-1].change}")} & seen):
             out.append("the last beat uses no object, sound or fact from the earlier beats; "
                        "its final image must come from something the story already showed")
     return out
@@ -222,22 +224,28 @@ def unused_objects(text, top=3):
     return out[:top]
 
 
-_DROP = re.compile(r"\b(?:dropped|abandoned|threw|flung|lost)\s+(?:my|the|his)\s+(\w+(?:\s+\w+)?)"
+_DROP = re.compile(r"\b(?:dropped|abandoned|flung|hurled)\s+(?:my|the|his)\s+(\w+(?:\s+\w+)?)"
                    r"|\bmy\s+(\w+)\s+(?:hit|fell to|clattered (?:to|onto|across)|skidded across|slid across)\s+the\b", re.I)
 _USE = re.compile(r"\b(?:held|holding|gripp\w*|clutch\w*|scratch\w*|jingl\w*|rattl\w*|unlock\w*|press\w*|using|dial\w*|"
                   r"rais\w*|lift\w*|wav\w*|swung|twist\w*|fumbl\w*|thumb\w*)\b", re.I)
-_TAKE = re.compile(r"\b(?:picked|grabbed|snatched|retrieved|scooped|recovered)\b", re.I)
+_TAKE = re.compile(r"\b(?:picked|grabbed|snatched|retrieved|scooped|recovered|took|seized|found)\b", re.I)
+_BODY = {"hand", "hands", "arm", "arms", "head", "eyes", "hair", "breath"}
 
 
 def dropped_then_used(parts):
-    """Objects the narrator drops, abandons or loses and then uses again with no sentence about taking them back:
-    [(object, index of the part that uses it)]. A simple word match, so it names only a likely hole for the critic."""
+    """Objects the narrator drops or abandons and then uses again with no sentence about taking them back:
+    [(object, index of the part that uses it)]. A simple word match: the refiner treats it as a logic issue for that
+    section, and a rewrite is kept only if a second look no longer finds it."""
     sents = [(i, s) for i, p in enumerate(parts) for s in sentences(unmark(p))]
     out = []
     for k, (_, s) in enumerate(sents):
         for m in _DROP.finditer(s):
             noun = (m.group(1) or m.group(2)).split()
-            noun = noun[0] if len(noun) > 1 and noun[1].lower() in _PREP else noun[-1]
+            # "keys on", "keys again" and "hands up" end at a small word; "heavy flashlight" takes the last
+            small = len(noun) > 1 and (noun[1].lower() in _PREP | _FUNC or len(noun[1]) < 4)
+            noun = noun[0] if small else noun[-1]
+            if noun.lower() in _BODY or noun.lower() in _FUNC:
+                continue
             stem = _stem(noun.lower())
             for j, later in sents[k + 1:]:
                 if stem in {_stem(x) for x in words(later)}:

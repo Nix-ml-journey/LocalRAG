@@ -11,6 +11,7 @@ import yaml
 
 from ragscript import config
 from ragscript.pipeline import Pipeline
+from ragscript.report import script_of
 
 COLLECTIONS = ("lore", "scripts", "hooks")
 
@@ -36,13 +37,7 @@ def top_k(all_ranks):
     flat = [r for rk in all_ranks for r in rk.values()]
     return {f"top{x}": sum(r <= x for r in flat) / len(flat) for x in (1, 3, 10)}
 
-AREAS = ("Premise", "Logic", "Tension", "Ending", "Voice", "Freshness")
-
-
-def script_of(md):
-    """The narration of a saved script: the text between its '## Script' heading and the next '## ' heading."""
-    m = re.search(r"(?ms)^## Script\s*\n(.*?)(?=^## |\Z)", md)
-    return m.group(1).strip() if m else md
+AREAS = ("Premise", "Hook", "Voice", "Prose", "Logic", "Ending")  # the scored lines of prompts/stages/reader.md
 
 
 def parse_reader(reply):
@@ -59,7 +54,7 @@ def _over_limit(s):
 def run(retrieval_only=False, ids=None, minutes=None, label=None, reader=True):
     """ids: only these brief ids; minutes: write every brief at this length; label: also copy the scripts and a
     stats.json to output/<label>/ (a quick regression run: `cli.py eval --ids b01,b03,b08 --minutes 5 --label x`);
-    reader: also have the model score each script as a listener (prompts/stages/reader.md, one extra call per brief)."""
+    reader: also have the model score each script as an editor (prompts/stages/reader.md, one extra call per brief)."""
     logging.basicConfig(level=logging.WARNING)
     briefs = [b for b in load_briefs() if not ids or b["id"] in ids]
     pl = Pipeline.from_config()
@@ -82,7 +77,11 @@ def run(retrieval_only=False, ids=None, minutes=None, label=None, reader=True):
             if dest:
                 shutil.copy(r["path"], dest / r["path"].name)
             if reader:
-                verdict = pl.read(script_of(r["markdown"]), b["brief"], b["genre"], minutes or b["minutes"])
+                try:  # the score is optional: one failed call must not lose a run that took an hour
+                    verdict = pl.read(script_of(r["markdown"]), b["brief"], b["genre"])
+                except Exception as e:
+                    logging.warning("reader failed for %s: %s", b["id"], e)
+                    verdict = ""
                 scores = parse_reader(verdict)
                 read_scores.append(scores)
                 line += f" reader={sum(scores.values())}/30" if len(scores) == len(AREAS) else " reader=n/a"

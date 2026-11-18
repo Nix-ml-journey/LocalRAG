@@ -2,9 +2,10 @@
 Runs Pipeline.write() with stubbed retrieval and model (no GPU, no Ollama, ~1 s): python -m pytest tests"""
 import re
 
-from support import make_pipeline, script_of, write_script
+from support import make_pipeline, write_script
 
 from ragscript import checks, config
+from ragscript.report import script_of
 
 CK = config.load()["checks"]
 
