@@ -25,7 +25,8 @@ def test_each_problem_is_flagged():
     assert any("garbled" in e for e in check(FM + BODY + " the shipâ€™s log", "lore_x.md")["errors"])
     assert any("too short" in e for e in check(FM + "Only a few words here.", "lore_x.md")["errors"])
     assert any("long" in w for w in check(FM + BODY * 12, "lore_x.md")["warnings"])
-    assert any("lacks: license" in w for w in check(FM.replace("license: CC BY-SA 4.0\n", "") + BODY, "lore_x.md")["warnings"])
+    no_license = FM.replace("license: CC BY-SA 4.0\n", "") + BODY
+    assert any("lacks: license" in w for w in check(no_license, "lore_x.md")["warnings"])
 
 
 def test_short_notes_skip_the_single_mention_warning():

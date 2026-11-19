@@ -1,6 +1,6 @@
 # Versions the tests and measurements were run with (Python 3.12).
 chromadb==1.5.9
-sentence-transformers==6.1.0   # pulls torch (CPU build is enough; embeddings/reranker run on CPU)
+sentence-transformers==6.1.0   # pulls torch (CPU build is enough; embeddings run on CPU)
 rank_bm25==0.2.2
 ollama==0.6.3                  # needs the `think` option
 gradio==6.30.0

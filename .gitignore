@@ -7,6 +7,14 @@ output/
 *.epub
 *.pdf
 
+# a book dropped in the project root (before it is moved to sources/) must never be committed
+/*.txt
+/*.docx
+/*.srt
+/*.vtt
+!/banned_phrases.txt
+!/requirements*.txt
+
 # books and training text are not redistributable
 data/
 

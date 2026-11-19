@@ -6,7 +6,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-from . import checks, grounding
+from . import checks, grounding, logic
 
 
 @dataclass(frozen=True)
@@ -86,7 +86,8 @@ def final_issues(text, earlier, cfg, banned):
     ck, out = cfg["checks"], _repeat_issues(text, earlier, cfg["checks"]) + _banned_issues(text, banned)
     limit = cfg["style"]["max_pause_per_section"]
     if (pauses := text.count("[PAUSE]")) > limit:
-        out.append(Issue("pause", f"it has {pauses} [PAUSE] cues; keep {limit} at most, right before a reveal", f"{pauses} cues"))
+        out.append(Issue("pause", f"it has {pauses} [PAUSE] cues; keep {limit} at most, right before a reveal",
+                         f"{pauses} cues"))
     if checks.mixed_tense(text, ck):
         out.append(Issue("tense", "it switches between past and present tense; rewrite everything in the past tense"))
     return out
@@ -96,7 +97,7 @@ def _note(issues):
     return "; ".join(i.kind + (f" ({i.detail})" if i.detail else "") for i in issues)
 
 
-AREAS = ("Premise", "Hook", "Voice", "Prose", "Logic", "Ending")  # the criteria of prompts/stages/reader.md and compare.md
+AREAS = ("Premise", "Hook", "Voice", "Prose", "Logic", "Ending")  # the criteria of prompts/stages/compare.md
 CRITERIA = AREAS + ("Overall",)
 FLIP = {"A": "B", "B": "A", "tie": "tie"}
 
@@ -174,8 +175,8 @@ class Refiner:
         Empty when the model finds none or answers off format."""
         numbered = "\n\n".join(f"[{i + 1}]\n{p}" for i, p in enumerate(parts))
         text = "\n\n".join(parts)
-        hints = ", ".join(checks.unused_objects(text)) or "(none)"
-        ending = ", ".join(checks.new_in_ending(text)) or "(none)"
+        hints = ", ".join(logic.unused_objects(text)) or "(none)"
+        ending = ", ".join(logic.new_in_ending(text)) or "(none)"
         reply = self.ask("critic", dict(narrator=story.narrator, outline=story.outline, text=numbered, hints=hints,
                                         ending_hints=ending), temperature=0.2, max_tokens=300)
         out = {}
@@ -184,23 +185,28 @@ class Refiner:
             i = int(m.group(1)) - 1
             if 0 <= i < len(parts) and len(out.get(i, [])) < 2:
                 out.setdefault(i, []).append(Issue("logic", m.group(2).strip()))
-        for noun, i in checks.dropped_then_used(parts):  # a code check, so the critic cannot miss it
+        for noun, i in logic.dropped_then_used(parts):  # a code check, so the critic cannot miss it
             if not any(noun in x.message for x in out.get(i, [])):
                 out.setdefault(i, []).append(Issue("logic", f"the narrator dropped the {noun} earlier but uses it here"))
         limit = self.cfg["checks"]["motif_max"]
-        for name, i in checks.detail_overuse(parts, story.details, limit):  # a detail past its limit: change it here
+        for name, i in logic.detail_overuse(parts, story.details, limit):  # a detail past its limit: change it here
             out.setdefault(i, []).append(Issue("logic", f'the recurring detail "{name}" already came back {limit} times '
                                                         "in earlier paragraphs; remove it here or change it completely"))
         return out
 
-    def judge(self, a, b, story):
-        """Which of two whole scripts is better: "A", "B" or "tie". The Ending line decides, else Overall; each is
-        asked in both orders and a disagreement is a tie (the judge followed position)."""
+    def compare(self, a, b, brief, genre):
+        """(winner per criterion, how many criteria the two orders disagreed on) for two scripts of one brief. The
+        judge is asked twice with the scripts exchanged, and a disagreement is a tie (it followed position)."""
         ask = lambda x, y: parse_compare(self.ask(
-            "compare", dict(genre=story.genre.slug, brief=story.brief, script_a=x, script_b=y),
-            temperature=0.1, max_tokens=900))
-        both = combine(ask(a, b), ask(b, a))
-        return both.get("Ending", "tie") if both.get("Ending", "tie") != "tie" else both.get("Overall", "tie")
+            "compare", dict(genre=genre, brief=brief, script_a=x, script_b=y), temperature=0.1, max_tokens=900))
+        first, swapped = ask(a, b), ask(b, a)
+        result = combine(first, swapped)
+        return result, sum(first[c] != FLIP[swapped[c]] for c in result)
+
+    def judge(self, a, b, story):
+        """Which of two whole scripts is better: "A", "B" or "tie". The Ending line decides, else Overall."""
+        result, _ = self.compare(a, b, story.brief, story.genre.slug)
+        return result.get("Ending", "tie") if result.get("Ending", "tie") != "tie" else result.get("Overall", "tie")
 
     def best_ending(self, parts, story):
         """The ending is the most criticised part and the cheapest to redo: write `checks.ending_candidates - 1` other
@@ -215,8 +221,9 @@ class Refiner:
         for _ in range(n - 1):
             new, kept = attempt(
                 best,
-                lambda: self.ask("ending", dict(narrator=story.narrator, outline=story.outline, payoff=story.payoff or "(none)",
-                                                before=" ".join(before.split()[-250:]), ending=best, target_words=words),
+                lambda: self.ask("ending", dict(narrator=story.narrator, outline=story.outline,
+                                                payoff=story.payoff or "(none)", ending=best, target_words=words,
+                                                before=" ".join(before.split()[-250:])),
                                  temperature=0.9, max_tokens=int(words * 2.2)),
                 lambda t: (ln["polish_min"] * words <= checks.spoken_count(t) <= ln["polish_max"] * words
                            and len(final_issues(t, before, self.cfg, self.banned)) <=
@@ -245,11 +252,12 @@ class Refiner:
             new, kept = attempt(
                 parts[i],
                 lambda: self.ask("revise", dict(text=parts[i], narrator=story.narrator, genre_rules=story.genre.rules,
-                                                problems="\n".join("- " + x.message for x in issues[i]), target_words=before),
+                                                target_words=before,
+                                                problems="\n".join("- " + x.message for x in issues[i])),
                                  temperature=0.5, max_tokens=int(before * 2.2)),
                 lambda n: (ln["polish_min"] * before <= checks.spoken_count(n) <= ln["polish_max"] * before
                            and len(final_issues(n, earlier, self.cfg, self.banned)) < len(issues[i])))
-            was_logic = any(x.kind == "logic" for x in issues[i])  # not `logic`: that is the critic's issues, used again next round
+            was_logic = any(x.kind == "logic" for x in issues[i])  # not `logic`: the critic's issues, used next round
             if kept and was_logic and i in self.critique(parts[:i] + [new] + parts[i + 1:], story):
                 story.notes.append(f"Revision of section {i + 1} rejected; "
                                    "a second critic call still found a logic hole there.")

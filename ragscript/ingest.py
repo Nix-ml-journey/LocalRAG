@@ -87,6 +87,9 @@ class Ingest:
         for f in sorted(data.rglob("*")):
             if f.is_file() and f.suffix.lower() in loaders.SUPPORTED:
                 rel = f.relative_to(data).as_posix()
+                if "/" not in rel:  # the folder is the genre: a file straight in data/ would get its own file name as genre
+                    log.warning("skipping %s: put it in data/<genre>/ (for example data/horror/)", rel)
+                    continue
                 seen.add(rel)
                 yield f, rel, hashlib.sha256(f.read_bytes()).hexdigest()
 

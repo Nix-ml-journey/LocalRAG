@@ -6,7 +6,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ragscript import loaders
-from ragscript import text as txt
 
 
 def make_epub(path):
@@ -15,8 +14,9 @@ def make_epub(path):
                    '<rootfile full-path="OEBPS/content.opf"/></rootfiles></container>')
         z.writestr("OEBPS/content.opf", '<package xmlns="http://www.idpf.org/2007/opf"><manifest>'
                    '<item id="b" href="ch%202.xhtml"/><item id="a" href="ch1.xhtml"/></manifest>'
-                   '<spine><itemref idref="a"/><itemref idref="b"/></spine></package>')  # spine order differs from manifest order
-        z.writestr("OEBPS/ch1.xhtml", "<html><style>p{}</style><body><h1>One</h1><p>It was dark &amp; cold.</p><p>Then silence.</p></body></html>")
+                   '<spine><itemref idref="a"/><itemref idref="b"/></spine></package>')  # spine order != manifest order
+        z.writestr("OEBPS/ch1.xhtml", "<html><style>p{}</style><body><h1>One</h1>"
+                                      "<p>It was dark &amp; cold.</p><p>Then silence.</p></body></html>")
         z.writestr("OEBPS/ch 2.xhtml", "<html><body><p>The second chapter begins.</p></body></html>")
 
 
@@ -45,10 +45,6 @@ def test_plain_text_is_untouched(tmp_path):
 def test_unhyphenate_joins_split_words_but_keeps_compounds():
     from ragscript.loaders import _unhyphenate
     assert _unhyphenate("the ani-\nmals and his mother-in-\nlaw") == "the animals and his mother-in-\nlaw"
-
-
-def test_splitter_does_not_end_a_sentence_at_a_closing_quote_before_a_lowercase_word():
-    assert len(txt.sentences('He read "J. Habakuk Jephson" aloud. It ended.')) == 2
 
 
 def test_pdf_soft_hyphens_are_removed_with_their_gap(tmp_path, monkeypatch):

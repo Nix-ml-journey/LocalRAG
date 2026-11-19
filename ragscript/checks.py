@@ -1,5 +1,6 @@
 """Post-generation checks on the narration itself: repeats, source overlap, sentence length, tense, crutch words.
-Fact grounding ([S#] and {{INVENTED}}) lives in grounding.py; the sentence splitter and tokenizer in text.py.
+Fact grounding ([S#] and {{INVENTED}}) lives in grounding.py; the sentence splitter and tokenizer in text.py; the
+story-logic checks (outline holes, details, dropped objects, the ending) in logic.py.
 Every threshold comes from config.yaml `checks:` (passed in as `ck`); nothing is tuned by editing this file."""
 import re
 from collections import Counter
@@ -68,9 +69,9 @@ def drop_repeat_sentences(text, earlier, n, thr, min_words):
     return "\n\n".join(out)
 
 
-def _content_set(text):
+def content_set(text):
     """The distinct content words (4+ letters, no function words) of a stretch of text."""
-    return {w for w in words(unmark(text)) if len(w) >= 4 and w not in _FUNC}
+    return {w for w in words(unmark(text)) if len(w) >= 4 and w not in FUNC}
 
 
 def drop_similar(text, earlier, thr, min_content):
@@ -78,10 +79,10 @@ def drop_similar(text, earlier, thr, min_content):
     rewords every phrase, but it still reuses the same content words: a paragraph is dropped when `thr` of the smaller
     paragraph's content words occur in an earlier paragraph (of `earlier` or kept before it). Paragraphs with fewer
     than `min_content` content words are never compared."""
-    seen = [s for s in (_content_set(p) for p in re.split(r"\n\s*\n", earlier)) if len(s) >= min_content]
+    seen = [s for s in (content_set(p) for p in re.split(r"\n\s*\n", earlier)) if len(s) >= min_content]
     kept = []
     for para in re.split(r"\n\s*\n", text):
-        cs = _content_set(para)
+        cs = content_set(para)
         if len(cs) >= min_content:
             if any(len(cs & s) / min(len(cs), len(s)) >= thr for s in seen):
                 continue
@@ -108,7 +109,7 @@ def repeated_wording(text, n=5, top=5):
     c = Counter(grams)
     runs, i = {}, 0
     while i < len(grams):
-        if c[grams[i]] < 2 or sum(x not in _FUNC and len(x) >= 4 for x in grams[i]) < 2:
+        if c[grams[i]] < 2 or sum(x not in FUNC and len(x) >= 4 for x in grams[i]) < 2:
             i += 1
             continue
         j = i
@@ -125,102 +126,6 @@ def repeated_wording(text, n=5, top=5):
     return sorted(out, key=lambda x: -x[1])[:top]
 
 
-def outline_issues(beats, limit):
-    """Logic holes in an outline (empty list = fine). Each beat should say where the narrator is (`place`), what new
-    thing happens (`change`) and which recurring detail it uses (`detail`, written "name: how it changes"). A beat with
-    no place or change, a change that nearly repeats the beat before, a detail used in two beats in a row, or one used
-    in more than `limit` beats is a hole."""
-    out, uses, prev, prev_detail = [], Counter(), None, ""
-    for i, b in enumerate(beats, 1):
-        tag = f"beat {i} ({b.beat})"
-        for k in ("place", "change"):
-            if not str(getattr(b, k)).strip():
-                out.append(f'{tag} has no "{k}"')
-        if _SCREEN.search(b.summary) and not b.sees.strip():
-            out.append(f'{tag} shows a screen or camera but has no "sees" saying what it shows')
-        ch = _content_set(b.change)
-        if prev and min(len(ch), len(prev)) >= 3 and len(ch & prev) / min(len(ch), len(prev)) >= 0.6:
-            out.append(f"{tag} changes almost the same thing as the beat before it")
-        prev = ch
-        name = b.detail.split(":")[0].strip().lower()
-        if name:
-            uses[name] += 1
-            if name == prev_detail:
-                out.append(f'{tag} uses the detail "{name}" again right after the beat before')
-        prev_detail = name
-    out += [f'the detail "{n}" is used in {c} beats; at most {limit}' for n, c in uses.items() if c > limit]
-    if len(beats) >= 4:  # the ending is planned: one thing is planted early and the outro's final image is that thing
-        payoff, plants = beats[-1].payoff.strip(), [(i, b.plant) for i, b in enumerate(beats) if b.plant.strip()]
-        if not payoff:
-            out.append('the outro has no "payoff": the final image, which is the planted thing shown once more')
-        elif not plants:
-            out.append(f'the final image "{payoff}" is planted in no beat; set "plant" in one of the first four beats')
-        else:
-            if late := [beats[i].beat for i, _ in plants if i > 3]:
-                out.append(f'"plant" is in the {late[0]} beat; it must be in one of the first four beats')
-            stems = lambda t: {_stem(w) for w in _content_set(t)}
-            if not stems(payoff) & stems(" ".join(p for _, p in plants)):
-                out.append(f'the planted thing and the final image "{payoff}" are different things')
-        # and the last beat must also reuse a word an earlier beat showed (words in half the beats, like a name, do not count)
-        sets = [{_stem(w) for w in _content_set(f"{b.title} {b.summary} {b.sees} {b.change} {b.detail} {b.plant}")}
-                for b in beats]
-        common ={w for w, n in Counter(w for s in sets for w in s).items() if n >= len(beats) / 2}  # name, setting
-        seen = set().union(*sets[:-2]) - common
-        if not ({_stem(w) for w in _content_set(f"{beats[-1].summary} {beats[-1].change} {payoff}")} & seen):
-            out.append("the last beat uses no object, sound or fact from the earlier beats; "
-                       "its final image must come from something the story already showed")
-    return out
-
-
-_ARTICLES = {"the", "and", "his", "her", "its", "for", "our", "their"}
-
-
-def detail_overuse(parts, names, limit):
-    """[(detail, index of the part)] for each recurring detail that comes back in more than `limit` paragraphs of the
-    script: every part holding one of the extra paragraphs. The detail is followed by its most specific word, the one
-    found in the fewest paragraphs, as in detail_returns."""
-    paras = [(i, set(words(unmark(p)))) for i, part in enumerate(parts) for p in re.split(r"\n\s*\n", part)]
-    out = []
-    for name in dict.fromkeys(n for n in names if n):
-        keys = [w for w in words(name) if len(w) >= 3 and w not in _FUNC and w not in _ARTICLES]
-        counts = {w: n for w in keys if (n := sum(w in s for _, s in paras))}
-        if counts:
-            key = min(counts, key=counts.get)
-            hits = [i for i, s in paras if key in s]  # the part of every paragraph that holds the detail, in order
-            out += [(name, i) for i in dict.fromkeys(hits[limit:])]  # the paragraphs past the limit, as parts
-    return out
-
-
-def detail_returns(text, names):
-    """How many paragraphs of the script bring back each named recurring detail: [(name, paragraphs)], most first. The
-    detail is followed by its most specific word, the one found in the fewest paragraphs, so a common word in the name
-    ("floor" in "floor wax") cannot inflate the count."""
-    paras = [set(words(unmark(p))) for p in re.split(r"\n\s*\n", text)]
-    out = {}
-    for name in names:
-        key = [w for w in words(name) if len(w) >= 3 and w not in _FUNC and w not in _ARTICLES]
-        found = [n for w in key if (n := sum(w in p for p in paras))]
-        if found and name not in out:
-            out[name] = min(found)
-    return sorted(out.items(), key=lambda x: -x[1])
-
-
-_SCREEN = re.compile(r"\b(monitors?|screens?|cameras?|footage)\b", re.I)
-
-
-def fill_sees(beats):
-    """A beat whose summary shows a screen or camera but has no `sees` takes it from the nearest beat that has one (the
-    same screen is usually meant). Returns how many beats were filled; no model call is needed."""
-    filled = 0
-    for i, b in enumerate(beats):
-        if _SCREEN.search(b.summary) and not b.sees.strip():
-            near = sorted((j for j, o in enumerate(beats) if o.sees.strip()), key=lambda j: abs(j - i))
-            if near:
-                b.sees = beats[near[0]].sees
-                filled += 1
-    return filled
-
-
 def tidy(text):
     """Layout clean-up of a finished script: no leading or trailing spaces on a line, a [PAUSE] glued to the end of a
     sentence goes on its own line, and a [PAUSE] directly followed by another is dropped. Words are unchanged."""
@@ -228,81 +133,6 @@ def tidy(text):
     t = re.sub(r"(?m)(\S)[ \t]+\[PAUSE\]$", r"\1\n\n[PAUSE]", t)
     t = re.sub(r"\[PAUSE\]\s*(?=\[PAUSE\])", "", t)
     return re.sub(r"\n{3,}", "\n\n", t).strip()
-
-
-_FOUND = re.compile(r"\b(?:noticed|found|spotted|saw|grabbed|held|gripped|pulled out|picked up|spied)\s+(?:an?|the)\s+"
-                    r"(?:(?:set|pair|bunch|stack) of\s+)?((?:\w+\s+){0,2}\w+)", re.I)
-_PREP = {"on", "in", "at", "near", "from", "under", "beside", "behind", "with", "that", "which", "as", "and", "by", "of",
-         "to", "into", "over", "while", "when"}
-
-
-def unused_objects(text, top=3):
-    """Objects the narrator finds or notices that are never mentioned again: a simple word count, so it is only a hint
-    for the critic. Returns up to `top` head nouns."""
-    w = [_stem(x) for x in words(unmark(text))]
-    out = []
-    for m in _FOUND.finditer(unmark(text)):
-        phrase = []
-        for x in m.group(1).split():
-            if x.lower() in _PREP:
-                break
-            phrase.append(x.lower())
-        head = phrase[-1] if phrase else ""
-        if len(head) >= 4 and head not in _FUNC and w.count(_stem(head)) == 1 and head not in out:
-            out.append(head)
-    return out[:top]
-
-
-_DET = re.compile(r"\b(?:a|an|the|my|his|her|its|their|our)\s+(?:[a-z]+\s+)?([a-z]{4,})\b", re.I)
-
-
-def new_in_ending(text, top=4):
-    """Things named in the last paragraph that the rest of the script never mentions: the word after a determiner
-    ("a pinch", "the stamp") whose stem occurs nowhere earlier; verbs and adverbs (-ed, -ing, -ly) are skipped. A word
-    match with no tagger, so it is only a hint for the critic to look at the ending."""
-    paras = [p for p in (CUE.sub("", q).strip() for q in re.split(r"\n\s*\n", text)) if p]  # "[PAUSE] I ran." is a line
-    if len(paras) < 2:
-        return []
-    seen = {_stem(w) for w in words(unmark(" ".join(paras[:-1])))}
-    out = []
-    for m in _DET.finditer(unmark(paras[-1])):
-        w = m.group(1).lower()
-        if w not in _FUNC and not w.endswith(("ed", "ing", "ly")) and _stem(w) not in seen and w not in out:
-            out.append(w)
-    return out[:top]
-
-
-_DROP = re.compile(r"\b(?:dropped|abandoned|flung|hurled)\s+(?:my|the|his)\s+(\w+(?:\s+\w+)?)"
-                   r"|\bmy\s+(\w+)\s+(?:hit|fell to|clattered (?:to|onto|across)|skidded across|slid across)\s+the\b", re.I)
-_USE = re.compile(r"\b(?:held|holding|gripp\w*|clutch\w*|scratch\w*|jingl\w*|rattl\w*|unlock\w*|press\w*|using|dial\w*|"
-                  r"rais\w*|lift\w*|wav\w*|swung|twist\w*|fumbl\w*|thumb\w*)\b", re.I)
-_TAKE = re.compile(r"\b(?:picked|grabbed|snatched|retrieved|scooped|recovered|took|seized|found)\b", re.I)
-_BODY = {"hand", "hands", "arm", "arms", "head", "eyes", "hair", "breath"}
-
-
-def dropped_then_used(parts):
-    """Objects the narrator drops or abandons and then uses again with no sentence about taking them back:
-    [(object, index of the part that uses it)]. A simple word match: the refiner treats it as a logic issue for that
-    section, and a rewrite is kept only if a second look no longer finds it."""
-    sents = [(i, s) for i, p in enumerate(parts) for s in sentences(unmark(p))]
-    out = []
-    for k, (_, s) in enumerate(sents):
-        for m in _DROP.finditer(s):
-            noun = (m.group(1) or m.group(2)).split()
-            # "keys on", "keys again" and "hands up" end at a small word; "heavy flashlight" takes the last
-            small = len(noun) > 1 and (noun[1].lower() in _PREP | _FUNC or len(noun[1]) < 4)
-            noun = noun[0] if small else noun[-1]
-            if noun.lower() in _BODY or noun.lower() in _FUNC:
-                continue
-            stem = _stem(noun.lower())
-            for j, later in sents[k + 1:]:
-                if stem in {_stem(x) for x in words(later)}:
-                    if _TAKE.search(later):
-                        break
-                    if _USE.search(later):
-                        out.append((noun.lower(), j))
-                        break
-    return out
 
 
 def avg_sentence_words(text) -> float:
@@ -352,11 +182,11 @@ def mixed_tense(text, ck) -> bool:
     return rarer >= ck["tense_floor"] and rarer / (pres + past) >= ck["tense_share"]
 
 
-_STOP = set("""about above after again against along also always another around because before behind being below between
+STOP = set("""about above after again against along also always another around because before behind being below between
 beyond could doing during every exactly except further having himself herself itself might never often other
 should since still than their theirs them themselves there these they those though through under until upon
 very were what when where whether which while whose would your yours yourself""".split())
-_FUNC = _STOP | set("""that with from this they them were been have into over like just when then than what your
+FUNC = STOP | set("""that with from this they them were been have into over like just when then than what your
 does some only more each even also very much such back there here will""".split())
 
 
@@ -368,8 +198,8 @@ def setting_words(*texts):
     """The stems of the content words (4+ letters) in the given texts: used for the brief and the outline's place,
     sees and detail text, i.e. the story's setting and its recurring details."""
     # "key_weight" is one token to the splitter, so underscores become spaces first; 3 letters are kept for "hum", "fan"
-    return {_stem(w) for t in texts for w in words(unmark(t).replace("_", " "))
-            if len(w) >= 3 and w not in _FUNC and w not in _SHORT_STOP}
+    return {stem(w) for t in texts for w in words(unmark(t).replace("_", " "))
+            if len(w) >= 3 and w not in FUNC and w not in _SHORT_STOP}
 
 
 def repeated_rate_outside(text, n, setting) -> float:
@@ -380,22 +210,22 @@ def repeated_rate_outside(text, n, setting) -> float:
     if not grams:
         return 0.0
     c = Counter(grams)
-    return sum(v for g, v in c.items() if v > 1 and not any(_stem(x) in setting for x in g)) / len(grams)
+    return sum(v for g, v in c.items() if v > 1 and not any(stem(x) in setting for x in g)) / len(grams)
 
 
-def _stem(w):
+def stem(w):
     return w[:-1] if len(w) > 4 and w.endswith("s") else w
 
 
 def topic_words(brief):
     """The brief's own content words (stemmed): a story about monitors says "monitor" often, which is not a crutch."""
-    return {_stem(w) for w in words(brief) if len(w) >= 5 and w not in _STOP}
+    return {stem(w) for w in words(brief) if len(w) >= 5 and w not in STOP}
 
 
 def content_counts(text, skip=frozenset()):
     """Counter of the content words (5+ letters, no function words, none of the `skip` topic words) in the text: the
     one counter behind both crutch-word checks."""
-    return Counter(x for x in words(unmark(text)) if len(x) >= 5 and x not in _STOP and _stem(x) not in skip)
+    return Counter(x for x in words(unmark(text)) if len(x) >= 5 and x not in STOP and stem(x) not in skip)
 
 
 def overused_words(text, ck, top=5, skip=frozenset()):

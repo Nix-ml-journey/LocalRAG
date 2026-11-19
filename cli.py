@@ -26,7 +26,6 @@ def main():
     e.add_argument("--ids", help="comma-separated brief ids from eval/briefs.yaml, e.g. b01,b03 (default: all)")
     e.add_argument("--minutes", type=int, choices=DURATIONS, help="write every brief at this length instead of its own")
     e.add_argument("--label", help="copy the written scripts and a stats.json to output/<label>/")
-    e.add_argument("--no-reader", action="store_true", help="skip the model's editor score of each script")
     c = sub.add_parser("compare", help="which of two eval runs wrote the better scripts (a pairwise judge)")
     c.add_argument("run_a", help="an eval --label folder under output/")
     c.add_argument("run_b", help="another eval --label folder with the same briefs")
@@ -34,8 +33,8 @@ def main():
 
     if a.cmd == "eval":
         from eval.run_eval import run
-        return run(retrieval_only=a.retrieval_only, ids=a.ids.split(",") if a.ids else None, minutes=a.minutes, label=a.label,
-                   reader=not a.no_reader)
+        ids = a.ids.split(",") if a.ids else None
+        return run(retrieval_only=a.retrieval_only, ids=ids, minutes=a.minutes, label=a.label)
     if a.cmd == "compare":
         from eval.run_eval import compare
         return compare(a.run_a, a.run_b)

@@ -7,7 +7,7 @@ import re
 import time
 from dataclasses import dataclass, field
 
-from . import checks, config, grounding
+from . import checks, config, grounding, logic
 from .grounding import clean_narration
 
 
@@ -40,7 +40,8 @@ class Report:
         return self.pause_cues / self.minutes
 
 
-def build(script, *, target_words, minutes, refs, cited_text, grounded, banned, cfg, notes, brief="", details=(), setting=frozenset()) -> Report:
+def build(script, *, target_words, minutes, refs, cited_text, grounded, banned, cfg, notes, brief="", details=(),
+          setting=frozenset()) -> Report:
     """Measure `script`. refs: every source chunk text shown to the model; cited_text: {S number: chunk text};
     the two fact checks only run for grounded genres."""
     ck = cfg["checks"]
@@ -60,7 +61,7 @@ def build(script, *, target_words, minutes, refs, cited_text, grounded, banned, 
         mixed_tense=checks.mixed_tense(script, ck),
         overused_words=checks.overused_words(script, ck, skip=checks.topic_words(brief)),
         repeated_wording=checks.repeated_wording(script), motif_limit=ck["motif_max"], notes=notes,
-        detail_returns=checks.detail_returns(script, details),
+        detail_returns=logic.detail_returns(script, details),
         repeated_outside_setting=round(checks.repeated_rate_outside(script, ck["repeated_ngram"], setting), 4))
     if r.mixed_tense:
         r.flags.append("**Tense switches between past and present in the narration (check before recording).**")
@@ -122,10 +123,12 @@ def render(doc: Doc, script, report) -> str:
                               for src, ns in doc.sources.items()], "",
          "## Checks",
          f"- Word accuracy: {r.word_accuracy:.1%}",
-         f"- Repeated-phrase rate: {r.repeated_phrase_rate:.1%} ({r.repeated_outside_setting:.1%} outside the setting words)",
+         f"- Repeated-phrase rate: {r.repeated_phrase_rate:.1%} "
+         f"({r.repeated_outside_setting:.1%} outside the setting words)",
          f"- Average sentence length: {r.avg_sentence_words} words (natural narration is about {r.sentence_range})"]
     if r.overused_words:
-        L.append("- Words used often (crutch words, consider varying): " + ", ".join(f"{w} ×{n}" for w, n in r.overused_words))
+        L.append("- Words used often (crutch words, consider varying): "
+                 + ", ".join(f"{w} ×{n}" for w, n in r.overused_words))
     if r.repeated_wording:
         L.append("- Details returning in the same words (fine when few; vary them): "
                  + ", ".join(f"\"{p}\" ×{n}" for p, n in r.repeated_wording))

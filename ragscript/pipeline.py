@@ -5,7 +5,7 @@ import logging
 import re
 from dataclasses import asdict, dataclass, field
 
-from . import checks, chunking, config, grounding, prompts, report, vram
+from . import checks, chunking, config, grounding, logic, prompts, report, vram
 from . import genre as genre_pack
 from .draft import Drafter
 from .ingest import Ingest
@@ -49,6 +49,16 @@ def _valid_outline(d):
     d["beats"] = [chunking.Beat.from_json(b) for b in d["beats"]]
 
 
+def name_details(narrator, beats):
+    """A beat whose detail is labelled "Detail 2: ..." takes the name of the narrator's second fixed detail, so the
+    detail checks (returns, over-use) look for a real word instead of "detail". No model call."""
+    named = {int(n): re.sub(r"(?i)^(?:the|a|an)\s+", "", t).strip()
+             for n, t in re.findall(r"(?i)detail\s*(\d)\s*:\s*([^;\n]+)", narrator)}
+    for b in beats:
+        if (m := re.match(r"(?i)\s*detail\s*(\d)\s*:\s*(.*)", b.detail)) and int(m.group(1)) in named:
+            b.detail = f"{named[int(m.group(1))]}: {m.group(2)}"
+
+
 def build_outline(ask_json, cfg, total, notes=None):
     """The outline as (narrator, [Beat]), the whole job in one place. `ask_json(temps, tail="", **model_options)` asks
     the model and returns the parsed dict (beats already `Beat`s) or None. A beat that shows a screen takes its `sees`
@@ -60,15 +70,17 @@ def build_outline(ask_json, cfg, total, notes=None):
         raise RuntimeError("could not get a valid outline from the model; try again or switch model")
     limit, beats = cfg["checks"]["motif_max"], data["beats"]
     beats[-1].plant = ""  # the outro holds the payoff; a plant copied there is no early setup, so it must not count as one
-    checks.fill_sees(beats)
-    if issues := checks.outline_issues(beats, limit):
+    name_details(str(data.get("narrator", "")), beats)
+    logic.fill_sees(beats)
+    if issues := logic.outline_issues(beats, limit):
         again = ask_json((0.4,), think=False,
                          tail="\n\nYour previous outline had these logic problems; fix them and output the "
                               "complete JSON again:\n- " + "\n- ".join(issues))
         if again:
             again["beats"][-1].plant = ""
-            checks.fill_sees(again["beats"])
-        if again and len(fixed := checks.outline_issues(again["beats"], limit)) < len(issues):
+            name_details(str(again.get("narrator", data.get("narrator", ""))), again["beats"])
+            logic.fill_sees(again["beats"])
+        if again and len(fixed := logic.outline_issues(again["beats"], limit)) < len(issues):
             data, beats, issues = again, again["beats"], fixed
         if issues and notes is not None:
             notes.append("Outline logic problems left: " + "; ".join(issues) + ".")
@@ -139,16 +151,6 @@ class Pipeline:
 
         narrator, beats = build_outline(ask_json, self.cfg, total, notes)
         return narrator, beats, total
-
-    def read(self, script, brief, genre):
-        """An editor's verdict on a finished script, used by the eval run: the model's nine lines as text."""
-        return self._ask("reader", dict(genre=genre, brief=brief, script=script),
-                         temperature=0.1, max_tokens=900)
-
-    def compare(self, script_a, script_b, brief, genre):
-        """Which of two scripts for one brief is better, criterion by criterion (eval only): seven lines as text."""
-        return self._ask("compare", dict(genre=genre, brief=brief, script_a=script_a, script_b=script_b),
-                         temperature=0.1, max_tokens=900)
 
     # ---- stages 3 to 6 -------------------------------------------------
     def write(self, brief, genre, minutes, hook, style="", progress=print):

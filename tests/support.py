@@ -39,7 +39,8 @@ class FakeLLM:
         stage = kw.get("stage")
         if stage == "outline":
             beats = [{"beat": b, "title": b, "words": 107, "summary": f"{b} scene", "place": f"room {i}",
-                      "change": f"event number {i} {'alpha beta gamma delta'.split()[i % 4]} {'north south east west'.split()[i % 4]} {i * 7}",
+                      "change": (f"event number {i} {'alpha beta gamma delta'.split()[i % 4]} "
+                                  f"{'north south east west'.split()[i % 4]} {i * 7}"),
                       "detail": ["hum: stalls", "smell: sharpens", "keys: rattle"][i % 3],
                       "plant": "a brass key on the hook" if i == 1 else "",
                       "payoff": "the brass key on the hook" if i == len(BEATS) - 1 else ""} for i, b in enumerate(BEATS)]
@@ -68,12 +69,26 @@ class FakeLLM:
         if stage == "summary":
             return "summary"
         if stage == "compare":  # a judge that always prefers the first script
-            return "\n".join(f'{c}: A | r | "q"' for c in ("Premise", "Hook", "Voice", "Prose", "Logic", "Ending", "Overall"))
+            return compare_reply("A")
         if stage == "ending":
             return "I closed the door. The brass key on the hook swung once, and I never touched it again."
         if stage == "package":
             return '{"titles": ["a","b","c","d","e"], "thumbnails": ["x","y","z"], "description": "d", "tags": ["t"]}'
         raise AssertionError("unexpected stage: " + str(stage))
+
+
+def compare_reply(winner):
+    """The judge's seven-line answer, with `winner` ("A", "B" or "tie") on every criterion."""
+    names = ("Premise", "Hook", "Voice", "Prose", "Logic", "Ending", "Overall")
+    return "\n".join(f'{c}: {winner} | r | "q"' for c in names)
+
+
+def ingest_cfg(tmp_path, state="s.json"):
+    """A config whose data, index and ingest state all live under tmp_path."""
+    cfg = config.load()
+    cfg["paths"].update(data_dir=str(tmp_path / "data"), chroma_dir=str(tmp_path / "db"),
+                        state_file=str(tmp_path / "db" / state))
+    return cfg
 
 
 def make_pipeline(tmp_path, llm=None, retriever=None, banned=()):

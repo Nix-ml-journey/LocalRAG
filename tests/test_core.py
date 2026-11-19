@@ -30,12 +30,23 @@ def test_genre_pack_any_name_and_grounding():
     assert s.slug == "sci-fi-x" and not s.grounded and "GENERIC" in s.rules
 
 
-def test_unsupported_cites():
+def test_unsupported_cites_flags_numbers_and_names_the_lore_lacks():
     lore = {1: "The Dei Gratia found the Mary Celeste on 4 December 1872."}
     ok = "The ship was found on 4 December 1872. [S1]"
     bad = "The pumps failed on 9 December. [S1]"
     assert not grounding.unsupported_cites(ok, lore)
     assert grounding.unsupported_cites(bad, lore)[0][1] == ["9"]
+    lore = {1: "The Dei Gratia found the Mary Celeste near the Azores on 4 December 1872."}
+    ok = "Then the Dei Gratia found the Mary Celeste. [S1]"
+    invented_name = "Then Captain Morehouse boarded the Mary Celeste. [S1]"
+    possessive = "The Mary Celeste’s trail ended near the Azores. [S1]"
+    wrapped = "The crew {{INVENTED: of Captain Morehouse}} reached the Azores. [S1]"
+    assert not grounding.unsupported_cites(ok, lore)
+    assert grounding.unsupported_cites(invented_name, lore)[0][1] == ["Captain", "Morehouse"]
+    assert not grounding.unsupported_cites(possessive, lore)  # "Celeste’s" is matched as "Celeste"
+    assert not grounding.unsupported_cites(wrapped, lore)  # names inside an INVENTED mark are already labelled
+    # I’ll is no name
+    assert not grounding.unsupported_cites("Some say the Azores held it, but I’ll never know. [S1]", lore)
 
 
 def test_grounding_and_repeat_helpers():
@@ -47,19 +58,6 @@ def test_grounding_and_repeat_helpers():
     p = "I slam the door and my watch stops at two thirty four"
     assert checks.drop_repeats("Something fresh happens in the cellar below us.\n\n" + p, p, 4, 0.6) == \
         "Something fresh happens in the cellar below us."
-
-
-def test_cited_sentence_with_a_name_missing_from_the_lore_is_flagged():
-    lore = {1: "The Dei Gratia found the Mary Celeste near the Azores on 4 December 1872."}
-    ok = "Then the Dei Gratia found the Mary Celeste. [S1]"
-    invented_name = "Then Captain Morehouse boarded the Mary Celeste. [S1]"
-    possessive = "The Mary Celeste’s trail ended near the Azores. [S1]"
-    wrapped = "The crew {{INVENTED: of Captain Morehouse}} reached the Azores. [S1]"
-    assert not grounding.unsupported_cites(ok, lore)
-    assert grounding.unsupported_cites(invented_name, lore)[0][1] == ["Captain", "Morehouse"]
-    assert not grounding.unsupported_cites(possessive, lore)  # "Celeste’s" is matched as "Celeste"
-    assert not grounding.unsupported_cites(wrapped, lore)  # names inside an INVENTED mark are already labelled
-    assert not grounding.unsupported_cites("Some say the Azores held it, but I’ll never know. [S1]", lore)  # I’ll is no name
 
 
 def test_mark_invented_wraps_only_rejected_sentences():
@@ -77,11 +75,13 @@ def test_drop_repeat_sentences():
     assert "fresh thing" in out and "left the wine" not in out and out.endswith("[PAUSE]")
 
 
-def test_avg_sentence_words_ignores_cues_and_counts_fragments():
-    assert round(checks.avg_sentence_words("I ran. It was dark. [PAUSE] Then nothing."), 2) == 2.33  # 2 + 3 + 2 words, 3 sentences
+def test_avg_sentence_words_ignores_cues_counts_fragments_and_uses_the_shared_splitter():
+    # 2 + 3 + 2 words, 3 sentences
+    assert round(checks.avg_sentence_words("I ran. It was dark. [PAUSE] Then nothing."), 2) == 2.33
     long = "The old keeper counted every single iron step as he climbed toward the lamp room at midnight."  # 17 words
     assert checks.avg_sentence_words(long + " {{INVENTED: He hummed a tune.}}") == (17 + 4) / 2
     assert checks.avg_sentence_words("[PAUSE]") == 0.0
+    assert checks.avg_sentence_words('He read J. Habakuk Jephson aloud. It ended.') == (6 + 2) / 2
 
 
 def test_prompts_ask_for_natural_sentence_rhythm():
@@ -89,7 +89,8 @@ def test_prompts_ask_for_natural_sentence_rhythm():
     root = Path(__file__).resolve().parent.parent / "prompts"
     assert config.sentence_range(CFG) == "12-16"
     for f in ("stages/section.md", "stages/polish.md", "stages/fit.md"):
-        assert "<<sentence_range>> words" in (root / f).read_text(encoding="utf-8"), f  # filled from config style.sentence_words
+        # filled from config style.sentence_words
+        assert "<<sentence_range>> words" in (root / f).read_text(encoding="utf-8"), f
     for f in root.glob("*.md"):
         assert "short sentences" not in f.read_text(encoding="utf-8").lower(), f"{f.name} still pushes fragments"
 
@@ -107,7 +108,8 @@ def test_render_script_is_clean_and_annotated_copy_is_last():
     from ragscript import report
     rep = report.Report(words=10, target_words=10, word_accuracy=1.0, repeated_phrase_rate=0.0, avg_sentence_words=5.0,
                         sentence_range="10-15", overlap_flags=[], banned_hits=[], invented=["x"], unsupported_cites=[],
-                        uncited_facts=[], pause_cues=0, minutes=5, mixed_tense=False, overused_words=[], repeated_wording=[], motif_limit=3)
+                        uncited_facts=[], pause_cues=0, minutes=5, mixed_tense=False, overused_words=[],
+                        repeated_wording=[], motif_limit=3)
     doc = report.Doc("b", "history", 5, "n", {}, [(0, "c")], {})
     md = report.render(doc, "Fact one [S1]. {{INVENTED: a smell}}.", rep)
     main = md[md.index("## Script"): md.index("## Chapters")]
@@ -131,30 +133,33 @@ def test_overlap_flag_and_repeat_rate():
     assert checks.overlap_flags(src, [src], 5, 0.8)
     assert not checks.overlap_flags("a completely different sentence about distant mountains today", [src], 5, 0.8)
     p = "I slam the door and my watch stops at two thirty four"
-    assert checks.drop_repeats(f"{p}.\n\nSomething new happens in the cellar below.\n\n{p} again.", "", 4, 0.6).count("slam") == 1
+    text = f"{p}.\n\nSomething new happens in the cellar below.\n\n{p} again."
+    assert checks.drop_repeats(text, "", 4, 0.6).count("slam") == 1
     assert checks.repeated_rate("a b c d e a b c d e", 4) > 0.5
     assert checks.spoken_count("Hello [PAUSE] world {{INVENTED: red door}}") == 4
 
 
-def test_curly_apostrophe_is_one_word():
+def test_words_keep_curly_apostrophes_and_accented_names_whole():
     # models emit both ' and ’; a split would inflate word counts and hide n-gram overlap with straight-quote sources
     assert checks.spoken_count("I don’t know") == checks.spoken_count("I don't know") == 3
     assert txt.words("don’t") == ["don't"]
+    assert txt.words("Félix Bruzzone") == ["félix", "bruzzone"]
 
 
-def test_sentence_split_ignores_initials_and_titles():
+def test_splitter_ignores_initials_titles_and_abbreviations_and_keeps_mid_sentence_tags():
     t = 'In 1884 Doyle published "J. Habakuk Jephson". Dr. Smith agreed. It ended.'
     assert re.split(txt.SENT, t) == ['In 1884 Doyle published "J. Habakuk Jephson".', "Dr. Smith agreed.", "It ended."]
+    t = "The ship left in 1861 [S1] before she was sold. He met Dr. Smith, i.e. the clerk. Done."
+    assert txt.sentences(t) == ["The ship left in 1861 [S1] before she was sold.", "He met Dr. Smith, i.e. the clerk.",
+                                "Done."]
+    assert len(txt.sentences('He read "J. Habakuk Jephson" aloud. It ended.')) == 2  # a closing quote before a word
 
 
 def test_mark_invented_never_nests():
     script = "{{INVENTED: I lean in. Records say so.}} Plain claim."
-    out, n = grounding.mark_invented(script, ["{{INVENTED: I lean in.", "Records say so.}}", "Plain claim."], lambda s: False)
+    claims = ["{{INVENTED: I lean in.", "Records say so.}}", "Plain claim."]
+    out, n = grounding.mark_invented(script, claims, lambda s: False)
     assert n == 1 and out.count("{{") == 2 and "{{INVENTED: Plain claim.}}" in out
-
-
-def test_avg_sentence_words_uses_the_shared_splitter():
-    assert checks.avg_sentence_words('He read J. Habakuk Jephson aloud. It ended.') == (6 + 2) / 2
 
 
 def test_verify_marks_only_what_the_model_rejects():
@@ -173,17 +178,9 @@ def test_source_ledger_numbers_and_reports_sources():
     assert led.used() == {"lore_a.md": [1], "x.txt": []} and led.refs == ["fact", "fact", "style"]
 
 
-def test_splitter_keeps_mid_sentence_tags_and_abbreviations_whole():
-    t = "The ship left in 1861 [S1] before she was sold. He met Dr. Smith, i.e. the clerk. Done."
-    assert txt.sentences(t) == ["The ship left in 1861 [S1] before she was sold.", "He met Dr. Smith, i.e. the clerk.", "Done."]
-
-
 def test_multi_sentence_invented_mark_is_not_reported_as_uncited():
-    assert grounding.uncited_facts("{{INVENTED: I lean in. Captain Briggs smiled.}} Captain Rose spoke.") == ["Captain Rose spoke."]
-
-
-def test_words_keep_accented_names_whole():
-    assert txt.words("Félix Bruzzone") == ["félix", "bruzzone"]
+    text = "{{INVENTED: I lean in. Captain Briggs smiled.}} Captain Rose spoke."
+    assert grounding.uncited_facts(text) == ["Captain Rose spoke."]
 
 
 def test_unlabelled_double_braces_become_invented_marks_and_never_reach_clean_narration():
