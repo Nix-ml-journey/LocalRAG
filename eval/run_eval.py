@@ -12,6 +12,7 @@ import yaml
 
 from ragscript import config
 from ragscript.pipeline import Pipeline
+from ragscript.refine import AREAS, FLIP, combine, parse_compare  # shared with the pipeline's ending choice
 from ragscript.report import script_of
 
 COLLECTIONS = ("lore", "scripts", "hooks")
@@ -38,29 +39,11 @@ def top_k(all_ranks):
     flat = [r for rk in all_ranks for r in rk.values()]
     return {f"top{x}": sum(r <= x for r in flat) / len(flat) for x in (1, 3, 10)}
 
-AREAS = ("Premise", "Hook", "Voice", "Prose", "Logic", "Ending")  # the scored lines of prompts/stages/reader.md
-
 
 def parse_reader(reply):
     """{area: score} from the reader's reply. An area the reader left out or scored off the 1-5 scale is missing."""
     scores = {a: re.search(rf"(?mi)^\s*{a}\s*:\s*([1-5])\b", reply) for a in AREAS}
     return {a: int(m.group(1)) for a, m in scores.items() if m}
-
-
-CRITERIA = AREAS + ("Overall",)  # the lines of prompts/stages/compare.md
-FLIP = {"A": "B", "B": "A", "tie": "tie"}
-
-
-def parse_compare(reply):
-    """{criterion: "A" | "B" | "tie"} from the judge's reply; a missing or malformed line is left out."""
-    found = {c: re.search(rf"(?mi)^\s*{c}\s*:\s*(A|B|tie)\s*(?:\||$)", reply) for c in CRITERIA}
-    return {c: (m.group(1).upper() if len(m.group(1)) == 1 else "tie") for c, m in found.items() if m}
-
-
-def combine(first, swapped):
-    """Winner per criterion over the two orderings. `swapped` was asked with the scripts exchanged, so its A is the
-    original B. When the orderings disagree the judge followed position, not quality: that criterion is a tie."""
-    return {c: first[c] if first[c] == FLIP[swapped[c]] else "tie" for c in first if c in swapped}
 
 
 def judge_pair(pl, script_a, script_b, brief, genre):

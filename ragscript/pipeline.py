@@ -39,6 +39,8 @@ class Story:
     hook: str = ""         # the hook the user picked
     notes: list = field(default_factory=list)  # remarks for the Checks section, added by any stage
     outline: str = ""      # the outline as numbered text, for stages that judge the whole script
+    details: list = field(default_factory=list)  # names of the outline's recurring details
+    payoff: str = ""       # the outro's final image, which an earlier beat planted
 
 
 def _valid_outline(d):
@@ -57,12 +59,14 @@ def build_outline(ask_json, cfg, total, notes=None):
     if data is None:
         raise RuntimeError("could not get a valid outline from the model; try again or switch model")
     limit, beats = cfg["checks"]["motif_max"], data["beats"]
+    beats[-1].plant = ""  # the outro holds the payoff; a plant copied there is no early setup, so it must not count as one
     checks.fill_sees(beats)
     if issues := checks.outline_issues(beats, limit):
         again = ask_json((0.4,), think=False,
                          tail="\n\nYour previous outline had these logic problems; fix them and output the "
                               "complete JSON again:\n- " + "\n- ".join(issues))
         if again:
+            again["beats"][-1].plant = ""
             checks.fill_sees(again["beats"])
         if again and len(fixed := checks.outline_issues(again["beats"], limit)) < len(issues):
             data, beats, issues = again, again["beats"], fixed
@@ -72,7 +76,7 @@ def build_outline(ask_json, cfg, total, notes=None):
     floor = max(40, round(total * 0.07))  # tiny beats get padded and repeat earlier text
     for b in beats:
         b.words = b.orig = max(floor, round(b.words * scale))
-    return data.get("narrator", ""), beats
+    return str(data.get("narrator", "")).replace("_", " "), beats  # snake_case in the bible ("glove_grip") reached the story
 
 
 class Pipeline:
@@ -162,8 +166,11 @@ class Pipeline:
         stage("Outline…")
         narrator, beats, total = self.outline(brief, g, minutes, hook, ledger.cite(lore0), notes)
         outline_txt = "\n".join(f"{i+1}. {b.beat} ({b.words}w): {b.title} - {b.summary}"
-                                + (f" [narrator at: {b.place}]" if b.place else "") for i, b in enumerate(beats))
-        story = Story(brief, g, narrator, total, minutes, hook, notes, outline_txt)
+                                + (f" [narrator at: {b.place}]" if b.place else "")
+                                + (f" [planted here: {b.plant}]" if b.plant else "")
+                                + (f" [final image: {b.payoff}]" if b.payoff else "") for i, b in enumerate(beats))
+        details = [b.detail.split(":")[0].strip() for b in beats]
+        story = Story(brief, g, narrator, total, minutes, hook, notes, outline_txt, details, beats[-1].payoff)
 
         sections = self.drafter.draft(story, beats, ledger, outline_txt, stage)
         parts = self.refiner.run(sections, story, stage)
@@ -188,7 +195,7 @@ class Pipeline:
                          lambda d: d["titles"], max_tokens=800) or {}  # a list or text answer raises here and is retried
         rep = report.build(script, target_words=total, minutes=minutes, refs=ledger.refs, cited_text=ledger.cited_text,
                            grounded=g.grounded, banned=self.banned, cfg=self.cfg, notes=notes, brief=brief,
-                           details=[b.detail.split(":")[0].strip() for b in beats],
+                           details=details,
                            setting=checks.setting_words(brief, *[f"{b.place} {b.sees} {b.detail}" for b in beats]))
         doc = report.Doc(brief, slug, minutes, narrator, pkg,
                          report.chapters([(b, checks.spoken_count(t)) for b, t in sections], rep.words,

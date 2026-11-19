@@ -9,6 +9,7 @@ Script, split into numbered sections:
 <<text>>
 
 Objects a simple word count found that are never mentioned again (check them; ignore any that do not matter): <<hints>>
+Words in the last paragraph that appear nowhere earlier (check whether any is an object, person or fact the story never set up; ignore the rest): <<ending_hints>>
 
 Find logic holes a listener would notice:
 - The narrator is in two places at once, or changes place with no sentence about it.

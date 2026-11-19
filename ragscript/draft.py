@@ -33,7 +33,10 @@ class Drafter:
             for key, label in (("place", "Where the narrator is for this whole beat"),
                                ("sees", "What the narrator looks at from that place"),
                                ("change", "What this beat adds that is new"),
-                               ("detail", "The one recurring detail to use here, and how it changes")):
+                               ("detail", "The one recurring detail to use here, and how it changes"),
+                               ("plant", "Show this in passing here, concretely, because the ending uses it"),
+                               ("payoff", "The final image: exactly the thing planted earlier, shown once more with a "
+                                          "new meaning; add nothing new in the last lines")):
                 if getattr(b, key):
                     beat_txt += f"\n{label}: {getattr(b, key)}"
             if b.beat == "hook":

@@ -96,6 +96,23 @@ def _note(issues):
     return "; ".join(i.kind + (f" ({i.detail})" if i.detail else "") for i in issues)
 
 
+AREAS = ("Premise", "Hook", "Voice", "Prose", "Logic", "Ending")  # the criteria of prompts/stages/reader.md and compare.md
+CRITERIA = AREAS + ("Overall",)
+FLIP = {"A": "B", "B": "A", "tie": "tie"}
+
+
+def parse_compare(reply):
+    """{criterion: "A" | "B" | "tie"} from the judge's reply; a missing or malformed line is left out."""
+    found = {c: re.search(rf"(?mi)^\s*{c}\s*:\s*(A|B|tie)\s*(?:\||$)", reply) for c in CRITERIA}
+    return {c: (m.group(1).upper() if len(m.group(1)) == 1 else "tie") for c, m in found.items() if m}
+
+
+def combine(first, swapped):
+    """Winner per criterion over the two orderings. `swapped` was asked with the scripts exchanged, so its A is the
+    original B. When the orderings disagree the judge followed position, not quality: that criterion is a tie."""
+    return {c: first[c] if first[c] == FLIP[swapped[c]] else "tie" for c in first if c in swapped}
+
+
 class Refiner:
     """ask(stage, template_vars, **chat_options) -> the model's reply; the pipeline supplies it."""
 
@@ -109,6 +126,8 @@ class Refiner:
         parts = self.polish(sections, story)
         stage("Revising weakest sections…")
         parts = self.revise_weakest(parts, story, self.critique(parts, story))
+        stage("Choosing the ending…")
+        parts = self.best_ending(parts, story)
         parts = self.dedupe_parts(parts, story)  # before the fit, so the fit sees the real length and makes it up
         stage("Fitting length…")
         return self.fit_length(parts, [b.words for b, _ in sections], story)
@@ -154,10 +173,11 @@ class Refiner:
         """One model call that reads the whole script and names logic holes: {section index: [Issue("logic", ...)]}.
         Empty when the model finds none or answers off format."""
         numbered = "\n\n".join(f"[{i + 1}]\n{p}" for i, p in enumerate(parts))
-        unused = checks.unused_objects("\n\n".join(parts))
-        hints = ", ".join(unused) if unused else "(none)"
-        reply = self.ask("critic", dict(narrator=story.narrator, outline=story.outline, text=numbered, hints=hints),
-                         temperature=0.2, max_tokens=300)
+        text = "\n\n".join(parts)
+        hints = ", ".join(checks.unused_objects(text)) or "(none)"
+        ending = ", ".join(checks.new_in_ending(text)) or "(none)"
+        reply = self.ask("critic", dict(narrator=story.narrator, outline=story.outline, text=numbered, hints=hints,
+                                        ending_hints=ending), temperature=0.2, max_tokens=300)
         out = {}
         # "2: ...", "2) ...", "- 2. ..." and "Section 2: ..." all name section 2
         for m in re.finditer(r"(?mi)^\s*(?:[-*]\s*)?(?:section\s*)?\[?(\d+)\]?\s*[:.)-]\s*(\S.*)$", reply):
@@ -167,7 +187,45 @@ class Refiner:
         for noun, i in checks.dropped_then_used(parts):  # a code check, so the critic cannot miss it
             if not any(noun in x.message for x in out.get(i, [])):
                 out.setdefault(i, []).append(Issue("logic", f"the narrator dropped the {noun} earlier but uses it here"))
+        limit = self.cfg["checks"]["motif_max"]
+        for name, i in checks.detail_overuse(parts, story.details, limit):  # a detail past its limit: change it here
+            out.setdefault(i, []).append(Issue("logic", f'the recurring detail "{name}" already came back {limit} times '
+                                                        "in earlier paragraphs; remove it here or change it completely"))
         return out
+
+    def judge(self, a, b, story):
+        """Which of two whole scripts is better: "A", "B" or "tie". The Ending line decides, else Overall; each is
+        asked in both orders and a disagreement is a tie (the judge followed position)."""
+        ask = lambda x, y: parse_compare(self.ask(
+            "compare", dict(genre=story.genre.slug, brief=story.brief, script_a=x, script_b=y),
+            temperature=0.1, max_tokens=900))
+        both = combine(ask(a, b), ask(b, a))
+        return both.get("Ending", "tie") if both.get("Ending", "tie") != "tie" else both.get("Overall", "tie")
+
+    def best_ending(self, parts, story):
+        """The ending is the most criticised part and the cheapest to redo: write `checks.ending_candidates - 1` other
+        versions of the last section and keep the one the judge prefers (a challenger must win; a tie keeps the
+        current text). A version is only judged when it has the right length and no more problems than the current one."""
+        n, ln = self.cfg["checks"]["ending_candidates"], self.cfg["length"]
+        last = max((j for j, p in enumerate(parts) if p.strip()), default=None)
+        if n < 2 or last is None:
+            return parts
+        before, best = "\n\n".join(parts[:last]), parts[last]
+        words, won = checks.spoken_count(best), 0
+        for _ in range(n - 1):
+            new, kept = attempt(
+                best,
+                lambda: self.ask("ending", dict(narrator=story.narrator, outline=story.outline, payoff=story.payoff or "(none)",
+                                                before=" ".join(before.split()[-250:]), ending=best, target_words=words),
+                                 temperature=0.9, max_tokens=int(words * 2.2)),
+                lambda t: (ln["polish_min"] * words <= checks.spoken_count(t) <= ln["polish_max"] * words
+                           and len(final_issues(t, before, self.cfg, self.banned)) <=
+                           len(final_issues(best, before, self.cfg, self.banned))))
+            if kept and new != best and self.judge(f"{before}\n\n{best}", f"{before}\n\n{new}", story) == "B":
+                best, won = new, won + 1
+        if won:
+            story.notes.append(f"Ending: a rewritten version won the judge's comparison ({won} of {n - 1} challengers).")
+        return parts[:last] + [best] + parts[last + 1:]
 
     def revise_weakest(self, parts, story, logic=None):
         """Rewrite the sections with the most issues, worst first, at most `checks.revise_sections` of them. Each is
@@ -191,13 +249,13 @@ class Refiner:
                                  temperature=0.5, max_tokens=int(before * 2.2)),
                 lambda n: (ln["polish_min"] * before <= checks.spoken_count(n) <= ln["polish_max"] * before
                            and len(final_issues(n, earlier, self.cfg, self.banned)) < len(issues[i])))
-            logic = any(x.kind == "logic" for x in issues[i])
-            if kept and logic and i in self.critique(parts[:i] + [new] + parts[i + 1:], story):
+            was_logic = any(x.kind == "logic" for x in issues[i])  # not `logic`: that is the critic's issues, used again next round
+            if kept and was_logic and i in self.critique(parts[:i] + [new] + parts[i + 1:], story):
                 story.notes.append(f"Revision of section {i + 1} rejected; "
                                    "a second critic call still found a logic hole there.")
             elif kept:
                 story.notes.append(f"Revised section {i + 1} to fix: {_note(issues[i])}."
-                                   + (" (a second critic call found no logic hole left)" if logic else ""))
+                                   + (" (a second critic call found no logic hole left)" if was_logic else ""))
                 parts = parts[:i] + [new] + parts[i + 1:]
             else:
                 story.notes.append(f"Revision of section {i + 1} rejected; polished text kept.")

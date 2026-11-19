@@ -149,17 +149,46 @@ def outline_issues(beats, limit):
                 out.append(f'{tag} uses the detail "{name}" again right after the beat before')
         prev_detail = name
     out += [f'the detail "{n}" is used in {c} beats; at most {limit}' for n, c in uses.items() if c > limit]
-    if len(beats) >= 4:  # the final image must grow from something an earlier beat already showed
-        sets = [{_stem(w) for w in _content_set(f"{b.title} {b.summary} {b.sees} {b.change} {b.detail}")} for b in beats]
-        common = {w for w, n in Counter(w for s in sets for w in s).items() if n >= len(beats) / 2}  # name, setting
+    if len(beats) >= 4:  # the ending is planned: one thing is planted early and the outro's final image is that thing
+        payoff, plants = beats[-1].payoff.strip(), [(i, b.plant) for i, b in enumerate(beats) if b.plant.strip()]
+        if not payoff:
+            out.append('the outro has no "payoff": the final image, which is the planted thing shown once more')
+        elif not plants:
+            out.append(f'the final image "{payoff}" is planted in no beat; set "plant" in one of the first four beats')
+        else:
+            if late := [beats[i].beat for i, _ in plants if i > 3]:
+                out.append(f'"plant" is in the {late[0]} beat; it must be in one of the first four beats')
+            stems = lambda t: {_stem(w) for w in _content_set(t)}
+            if not stems(payoff) & stems(" ".join(p for _, p in plants)):
+                out.append(f'the planted thing and the final image "{payoff}" are different things')
+        # and the last beat must also reuse a word an earlier beat showed (words in half the beats, like a name, do not count)
+        sets = [{_stem(w) for w in _content_set(f"{b.title} {b.summary} {b.sees} {b.change} {b.detail} {b.plant}")}
+                for b in beats]
+        common ={w for w, n in Counter(w for s in sets for w in s).items() if n >= len(beats) / 2}  # name, setting
         seen = set().union(*sets[:-2]) - common
-        if not ({_stem(w) for w in _content_set(f"{beats[-1].summary} {beats[-1].change}")} & seen):
+        if not ({_stem(w) for w in _content_set(f"{beats[-1].summary} {beats[-1].change} {payoff}")} & seen):
             out.append("the last beat uses no object, sound or fact from the earlier beats; "
                        "its final image must come from something the story already showed")
     return out
 
 
 _ARTICLES = {"the", "and", "his", "her", "its", "for", "our", "their"}
+
+
+def detail_overuse(parts, names, limit):
+    """[(detail, index of the part)] for each recurring detail that comes back in more than `limit` paragraphs of the
+    script: every part holding one of the extra paragraphs. The detail is followed by its most specific word, the one
+    found in the fewest paragraphs, as in detail_returns."""
+    paras = [(i, set(words(unmark(p)))) for i, part in enumerate(parts) for p in re.split(r"\n\s*\n", part)]
+    out = []
+    for name in dict.fromkeys(n for n in names if n):
+        keys = [w for w in words(name) if len(w) >= 3 and w not in _FUNC and w not in _ARTICLES]
+        counts = {w: n for w in keys if (n := sum(w in s for _, s in paras))}
+        if counts:
+            key = min(counts, key=counts.get)
+            hits = [i for i, s in paras if key in s]  # the part of every paragraph that holds the detail, in order
+            out += [(name, i) for i in dict.fromkeys(hits[limit:])]  # the paragraphs past the limit, as parts
+    return out
 
 
 def detail_returns(text, names):
@@ -221,6 +250,25 @@ def unused_objects(text, top=3):
         head = phrase[-1] if phrase else ""
         if len(head) >= 4 and head not in _FUNC and w.count(_stem(head)) == 1 and head not in out:
             out.append(head)
+    return out[:top]
+
+
+_DET = re.compile(r"\b(?:a|an|the|my|his|her|its|their|our)\s+(?:[a-z]+\s+)?([a-z]{4,})\b", re.I)
+
+
+def new_in_ending(text, top=4):
+    """Things named in the last paragraph that the rest of the script never mentions: the word after a determiner
+    ("a pinch", "the stamp") whose stem occurs nowhere earlier; verbs and adverbs (-ed, -ing, -ly) are skipped. A word
+    match with no tagger, so it is only a hint for the critic to look at the ending."""
+    paras = [p for p in (CUE.sub("", q).strip() for q in re.split(r"\n\s*\n", text)) if p]  # "[PAUSE] I ran." is a line
+    if len(paras) < 2:
+        return []
+    seen = {_stem(w) for w in words(unmark(" ".join(paras[:-1])))}
+    out = []
+    for m in _DET.finditer(unmark(paras[-1])):
+        w = m.group(1).lower()
+        if w not in _FUNC and not w.endswith(("ed", "ing", "ly")) and _stem(w) not in seen and w not in out:
+            out.append(w)
     return out[:top]
 
 

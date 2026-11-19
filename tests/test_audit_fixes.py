@@ -39,7 +39,7 @@ def test_outline_with_loose_beat_names_and_bad_words_is_fixed_or_retried(tmp_pat
                 self.outlines += 1
                 names = [b.title().replace("_", " ") for b in BEATS]  # "Hook", "Rising Tension"...
                 words = "about 100" if self.outlines == 1 else 107
-                beats = [{"beat": n, "title": n, "words": words, "summary": "s", "place": f"room {i}", "change": f"new event {i * 11} {'ab cd ef gh ij kl mn'.split()[i]} xyz {'lantern' * (i in (0, 6))}", "detail": ""}
+                beats = [{"beat": n, "title": n, "words": words, "summary": "s", "place": f"room {i}", "change": f"new event {i * 11} {'ab cd ef gh ij kl mn'.split()[i]} xyz {'lantern' * (i in (0, 6))}", "detail": "", "plant": "brass key" if i == 1 else "", "payoff": "brass key" if i == 6 else ""}
                      for i, n in enumerate(names)]
                 return json.dumps({"narrator": "Eli", "beats": beats})
             if kw.get("stage") == "section":
@@ -572,7 +572,8 @@ def test_a_logic_rewrite_is_kept_only_when_a_second_critic_call_finds_no_hole(tm
 
 def _outline_with(holes):
     beats = [chunking.Beat(b, 100, place="" if i < holes else f"room {i}",
-                           change=f"event {i} {'alpha beta gamma delta epsilon zeta eta'.split()[i]} {i * 9} {'lantern' * (i in (0, 6))}")
+                           change=f"event {i} {'alpha beta gamma delta epsilon zeta eta'.split()[i]} {i * 9} {'lantern' * (i in (0, 6))}",
+                           plant="lantern" if i == 1 else "", payoff="the lantern" if i == 6 else "")
              for i, b in enumerate(chunking.BEATS)]
     return {"narrator": "Eli", "beats": beats}
 
@@ -639,7 +640,7 @@ Section 4: a fact contradicts an earlier one
 NONE of this matters
 99: not a real section"""
     ref = Refiner(lambda stage, vars_, **kw: reply, config.load(), [])
-    found = ref.critique(["a", "b", "c", "d", "e"], SimpleNamespace(narrator="n", outline="o"))
+    found = ref.critique(["a", "b", "c", "d", "e"], SimpleNamespace(narrator="n", outline="o", details=[]))
     assert sorted(found) == [1, 2, 3, 4] and found[2][0].message == "an object is never used again"
 
 
@@ -696,8 +697,123 @@ def test_pairs_match_the_same_brief_across_two_eval_folders(tmp_path, monkeypatc
 
 
 def test_compare_prompt_fills_every_placeholder():
-    from eval.run_eval import CRITERIA, parse_compare
+    from ragscript.refine import CRITERIA, parse_compare
     from ragscript import prompts
     out = prompts.stage(config.load(), "compare", (), genre="horror", brief="b", script_a="SA", script_b="SB")
     assert "<<" not in out and "\nSA\n" in out and "\nSB\n" in out
     assert len(parse_compare(out[out.index("The layout below"):])) == len(CRITERIA)  # the sample reply parses fully
+
+
+def test_new_in_ending_names_only_things_the_rest_of_the_script_never_mentions():
+    from ragscript import checks
+    text = ("I hid in the booth with the salt and the logbook.\n\nThe lamp went dark.\n\n"
+            "I huddled and took a pinch of salt from the stamp, slowly.")
+    assert checks.new_in_ending(text) == ["pinch", "stamp"]  # "salt" was told before; "huddled", "slowly" are not things
+    assert checks.new_in_ending("One paragraph only, with a pinch.") == []
+    cued = text.replace("I huddled", "[PAUSE] I huddled")  # a last line that opens with a cue still counts as the ending
+    assert checks.new_in_ending(cued) == ["pinch", "stamp"]
+    assert checks.new_in_ending(text + "\n\n[SFX: wind]") == ["pinch", "stamp"]  # a cue-only paragraph is not a paragraph
+
+
+def test_two_rewrite_rounds_keep_the_critic_issues_for_the_second_round(tmp_path):
+    """A logic rewrite in round one once replaced the issue dict with a bool, so round two crashed."""
+    from tests.support import FakeLLM
+
+    class L(FakeLLM):
+        def chat(self, prompt, **kw):
+            if kw.get("stage") == "critic":
+                return "2: the narrator is in two places at once\n3: an object appears from nowhere"
+            return super().chat(prompt, **kw)
+
+    pl = pipeline(tmp_path, L())
+    pl.cfg["checks"]["revise_sections"] = 3
+    assert "Revi" in write(pl)["markdown"]  # more than one round ran without an AttributeError
+
+
+def test_outline_must_plant_the_final_image_early_and_the_outro_must_show_it():
+    from ragscript import checks
+
+    def story(plant="a brass key on the hook", payoff="the brass key", plant_at=1):
+        beats = [chunking.Beat(b, 100, place="booth", change=f"event {i} {'alpha beta gamma delta epsilon zeta eta'.split()[i]}")
+                 for i, b in enumerate(chunking.BEATS)]
+        beats[plant_at].plant, beats[-1].payoff = plant, payoff
+        return checks.outline_issues(beats, 3)
+
+    new = ('no "payoff"', "planted in no beat", "different things", "first four beats")
+    assert not any(m in x for x in story() for m in new)  # a planted, matching final image raises none of the new issues
+    assert any('no "payoff"' in x for x in story(payoff=""))
+    assert any("planted in no beat" in x for x in story(plant=""))
+    assert any("different things" in x for x in story(payoff="the red door"))
+    assert any("must be in one of the first four beats" in x for x in story(plant_at=5))
+
+
+def test_detail_overuse_names_the_parts_past_the_limit():
+    from ragscript import checks
+    parts = ["The hum filled the booth.", "The hum stalled.", "The hum rose again.", "Silence, then a hum."]
+    assert checks.detail_overuse(parts, ["hum", ""], 3) == [("hum", 3)]  # the 4th paragraph is past the limit of 3
+    two_in_one = ["The hum filled the booth.", "The hum stalled.\n\nThe hum dropped.", "A hum rose.", "Then a hum."]
+    assert checks.detail_overuse(two_in_one, ["hum"], 3) == [("hum", 2), ("hum", 3)]  # paragraphs, reported as parts
+    assert checks.detail_overuse(parts, ["hum"], 4) == []
+    assert checks.detail_overuse(parts, ["gears"], 3) == []
+
+
+def test_a_detail_past_its_limit_becomes_a_logic_issue_for_the_critic_to_fix(tmp_path):
+    from types import SimpleNamespace
+    from ragscript.refine import Refiner
+    ref = Refiner(lambda *a, **k: "NONE", pipeline(tmp_path).cfg, [])
+    parts = ["The hum filled the booth.", "The hum stalled.", "The hum rose.", "The hum came back once more."]
+    found = ref.critique(parts, SimpleNamespace(narrator="n", outline="o", details=["hum"]))
+    assert list(found) == [3] and 'recurring detail "hum"' in found[3][0].message
+
+
+def test_best_ending_keeps_a_challenger_only_when_it_wins_in_both_orders(tmp_path):
+    from types import SimpleNamespace
+    from ragscript.refine import Refiner
+
+    def run(compare_reply, parts):
+        asked = []
+
+        def ask(stage, tpl_vars, **kw):
+            asked.append(stage)
+            return "I closed the door and the brass key swung once." if stage == "ending" else compare_reply(tpl_vars)
+
+        pl = pipeline(tmp_path)
+        pl.cfg["checks"]["ending_candidates"] = 2
+        story = SimpleNamespace(narrator="n", outline="o", payoff="the brass key", brief="b", notes=[],
+                                genre=SimpleNamespace(slug="horror"))
+        return Refiner(ask, pl.cfg, []).best_ending(parts, story), asked, story.notes
+
+    lines = lambda w: "\n".join(f'{c}: {w} | r | "q"' for c in ("Premise", "Hook", "Voice", "Prose", "Logic", "Ending", "Overall"))
+    parts = ["I stood in the booth."] * 3 + ["I heard the lock and the dark closed over the booth and nothing moved."]
+    prefer_second = lambda v: lines("B") if "closed the door" not in v["script_a"] else lines("A")  # the challenger wins both orders
+    out, asked, notes = run(prefer_second, parts)
+    assert out[-1].startswith("I closed the door") and asked.count("compare") == 2 and any("Ending:" in n for n in notes)
+    out, asked, notes = run(lambda v: lines("A"), parts)  # always "A" is position bias: a tie keeps the current ending
+    assert out == parts and not notes
+
+
+def test_outline_field_values_become_plain_words_so_no_snake_case_reaches_the_narration():
+    b = chunking.Beat.from_json({"beat": "setup", "words": 100, "detail": "haptic_hum: steady", "sees": "scanner_screen",
+                                 "plant": "gray_synth_wrap"})
+    assert (b.detail, b.sees, b.plant) == ("haptic hum: steady", "scanner screen", "gray synth wrap")
+    assert b.beat == "setup"
+
+
+def test_the_last_beat_may_show_the_planted_thing_through_its_payoff_alone():
+    from ragscript import checks
+    beats = [chunking.Beat(n, 100, place="booth", change=f"event {i} {'alpha beta gamma delta epsilon zeta eta'.split()[i]}",
+                           summary=f"scene {i} of the guard")
+             for i, n in enumerate(chunking.BEATS)]
+    beats[1].plant, beats[-1].payoff = "a brass key", "the brass key"  # nothing else in the outro mentions the key
+    assert not any("last beat" in x for x in checks.outline_issues(beats, 3))
+
+
+def test_build_outline_cleans_the_narrator_and_ignores_a_plant_copied_into_the_outro():
+    first = _outline_with(0)
+    first["narrator"] = "Eli, a courier; details: glove_grip, hum"
+    first["beats"][-1].plant = "the lantern"  # the model copied the payoff into the outro's plant
+    beats, notes = _build(first, first)[0], _build(first, first)[1]
+    assert beats[-1].plant == "" and notes == []
+    narrator, _ = __import__("ragscript.pipeline", fromlist=["build_outline"]).build_outline(
+        lambda temps, **kw: _outline_with(0) | {"narrator": "Eli; glove_grip"}, config.load(), 700, [])
+    assert narrator == "Eli; glove grip"

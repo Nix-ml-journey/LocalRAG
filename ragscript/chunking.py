@@ -29,6 +29,8 @@ class Beat:
     sees: str = ""     # what he looks at from there (a named screen stays that screen)
     change: str = ""   # the one new fact, event or danger the beat adds
     detail: str = ""   # "name: how it changes", the recurring detail used here
+    plant: str = ""    # in one early beat: the object, sound or fact shown in passing that the ending will use
+    payoff: str = ""   # in the outro only: the final image, which is that planted thing
 
     @classmethod
     def from_json(cls, d):
@@ -37,7 +39,9 @@ class Beat:
         beat, words = str(d["beat"]).strip().lower().replace(" ", "_"), int(d["words"])
         if beat not in BEATS or words <= 0:
             raise ValueError(f"bad beat {d!r}")
-        return cls(beat, words, **{k: str(d.get(k) or "") for k in ("title", "summary", "place", "sees", "change", "detail")})
+        # snake_case names ("haptic_hum") leaked into the narration, so the model's field values become plain words
+        return cls(beat, words, **{k: str(d.get(k) or "").replace("_", " ")
+                                   for k in ("title", "summary", "place", "sees", "change", "detail", "plant", "payoff")})
 
 
 def tokens(s: str) -> int:

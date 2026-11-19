@@ -40,7 +40,9 @@ class FakeLLM:
         if stage == "outline":
             beats = [{"beat": b, "title": b, "words": 107, "summary": f"{b} scene", "place": f"room {i}",
                       "change": f"event number {i} {'alpha beta gamma delta'.split()[i % 4]} {'north south east west'.split()[i % 4]} {i * 7}",
-                      "detail": ["hum: stalls", "smell: sharpens", "keys: rattle"][i % 3]} for i, b in enumerate(BEATS)]
+                      "detail": ["hum: stalls", "smell: sharpens", "keys: rattle"][i % 3],
+                      "plant": "a brass key on the hook" if i == 1 else "",
+                      "payoff": "the brass key on the hook" if i == len(BEATS) - 1 else ""} for i, b in enumerate(BEATS)]
             return '{"narrator": "Eli, a night guard", "beats": %s}' % str(beats).replace("'", '"')
         if stage == "section":
             if "Previous attempt:" in prompt:  # corrective retry: the real model repeats itself again
@@ -65,6 +67,10 @@ class FakeLLM:
             return "NONE"
         if stage == "summary":
             return "summary"
+        if stage == "compare":  # a judge that always prefers the first script
+            return "\n".join(f'{c}: A | r | "q"' for c in ("Premise", "Hook", "Voice", "Prose", "Logic", "Ending", "Overall"))
+        if stage == "ending":
+            return "I closed the door. The brass key on the hook swung once, and I never touched it again."
         if stage == "package":
             return '{"titles": ["a","b","c","d","e"], "thumbnails": ["x","y","z"], "description": "d", "tags": ["t"]}'
         raise AssertionError("unexpected stage: " + str(stage))
@@ -74,6 +80,7 @@ def make_pipeline(tmp_path, llm=None, retriever=None, banned=()):
     """An offline Pipeline that writes its output under tmp_path."""
     cfg = config.load()
     cfg["llm"]["parallel"] = 1
+    cfg["checks"]["ending_candidates"] = 1  # the best-of-N ending has its own test
     cfg["paths"]["output_dir"] = str(tmp_path)
     return Pipeline(cfg, retriever or FakeRetriever(), llm or FakeLLM(), banned=banned)
 

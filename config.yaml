@@ -46,7 +46,8 @@ checks:
   repeated_ngram: 4         # repeated-phrase rate uses this n
   section_repeat: 0.08      # a section draft is rewritten when more than this share of its 4-grams repeat
   earlier_overlap: 0.6      # ... or when more than this share of a paragraph's 4-grams were already written
-  revise_sections: 1        # ... the weakest-section rewrite fixes this many sections, worst first
+  revise_sections: 1        # ... the weakest-section rewrite fixes this many sections, worst first (2 showed no gain on 3 briefs)
+  ending_candidates: 3      # the last section is written this many ways and the judge keeps the best (1 turns it off)
   dedupe_ngram: 4           # the repeat guard compares 4-grams of paragraphs and sentences
   dedupe_paragraph: 0.6     # ... drops a paragraph when more than this share of its n-grams was already written
   dedupe_similar: 0.5       # ... or a paragraph that retells an earlier one in new words: this share of its content words are shared
