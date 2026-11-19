@@ -227,3 +227,17 @@ def test_best_ending_keeps_a_challenger_only_when_it_wins_in_both_orders(tmp_pat
     # always "A" is position bias, so the orders disagree: a tie keeps the current ending
     out, asked, notes = run(lambda v: compare_reply("A"), parts)
     assert out == parts and not notes
+
+
+def test_every_over_used_detail_gets_a_rewrite_even_past_the_configured_number():
+    from ragscript import genre
+    from ragscript.refine import Issue, Refiner
+    cfg = config.load()
+    cfg["checks"]["revise_sections"] = 1
+    g = genre.load(cfg, "horror")
+    parts = ["Start here.", "I took the key.", "I held the key.", "I lost the key."]
+    calls = []
+    hole = {i: [Issue("logic", 'the recurring detail "key" already came back 3 times')] for i in (1, 2, 3)}
+    Refiner(lambda s, v, **kw: calls.append(s) or "Fresh words now.", cfg, []).revise_weakest(
+        parts, Story("b", g, "Eli", 750, 5, notes=[]), hole)
+    assert calls.count("revise") == 3

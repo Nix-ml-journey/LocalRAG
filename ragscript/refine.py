@@ -239,7 +239,8 @@ class Refiner:
         judged against the text before it as it is now; a rewrite is kept only if it has fewer issues and stays near
         its length."""
         ln, tried = self.cfg["length"], set()
-        for _ in range(self.cfg["checks"]["revise_sections"]):
+        overused = sum(any("recurring detail" in x.message for x in v) for v in (logic or {}).values())
+        for _ in range(max(self.cfg["checks"]["revise_sections"], overused)):  # every over-used detail gets its fix
             earlier, issues = "", []
             for p in parts:
                 issues.append(final_issues(p, earlier, self.cfg, self.banned) + (logic or {}).get(len(issues), []))

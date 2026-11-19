@@ -17,7 +17,7 @@ def test_outline_with_loose_beat_names_and_bad_words_is_fixed_or_retried(tmp_pat
                 self.outlines += 1
                 names = [b.title().replace("_", " ") for b in BEATS]  # "Hook", "Rising Tension"...
                 words = "about 100" if self.outlines == 1 else 107
-                beats = [{"beat": n, "title": n, "words": words, "summary": "s", "place": f"room {i}", "detail": "",
+                beats = [{"beat": n, "title": n, "words": words, "summary": "a guard keeps seeing himself", "place": f"room {i}", "detail": "",
                           "change": (f"new event {i * 11} {'ab cd ef gh ij kl mn'.split()[i]} xyz "
                                      f"{'lantern' * (i in (0, 6))}"),
                           "plant": "brass key" if i == 1 else "", "payoff": "brass key" if i == 6 else ""}

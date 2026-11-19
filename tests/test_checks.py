@@ -215,3 +215,24 @@ def test_outline_flags_a_detail_named_detail_n_and_a_change_that_is_only_a_mood(
     found = " | ".join(logic.outline_issues(beats, 3))
     assert 'calls its detail "detail 2"' in found and "not an event someone could film" in found
     assert "beat 3" in found and found.count("not an event") == 1
+
+
+def test_outline_flags_a_change_that_only_says_something_stays_the_same():
+    from ragscript import logic
+    beats = [chunking.Beat(b, 100, place="deck", change="The stranger remains seated and still dripping." if i == 3
+                           else f"event {i} {'alpha beta gamma delta epsilon zeta eta'.split()[i]}")
+             for i, b in enumerate(chunking.BEATS)]
+    found = " | ".join(logic.outline_issues(beats, 3))
+    assert "beat 4" in found and found.count("not an event") == 1
+
+
+def test_outline_that_never_names_the_briefs_nouns_is_flagged():
+    from ragscript import logic
+    beats = [chunking.Beat("hook", 100, summary="A figure stands by the rail.", change="it stares at him")]
+    brief = "a ferry deckhand counts more passengers than tickets sold"
+    found = logic.brief_issues(beats, brief)
+    assert any('"ticket"' in x for x in found) and not any("figure" in x for x in found)
+    beats[0].summary += " He counts tickets and passengers on the ferry; the deckhand is tired."
+    assert logic.brief_issues(beats, brief) == []
+    beats[0].summary = "A figure stands by the rail."
+    assert logic.brief_issues(beats, "a deckhand", "Elias, a ferry deckhand") == []

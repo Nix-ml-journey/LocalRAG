@@ -38,7 +38,7 @@ class FakeLLM:
     def chat(self, prompt, **kw):
         stage = kw.get("stage")
         if stage == "outline":
-            beats = [{"beat": b, "title": b, "words": 107, "summary": f"{b} scene", "place": f"room {i}",
+            beats = [{"beat": b, "title": b, "words": 107, "summary": f"{b} scene, a guard keeps seeing himself", "place": f"room {i}",
                       "change": (f"event number {i} {'alpha beta gamma delta'.split()[i % 4]} "
                                   f"{'north south east west'.split()[i % 4]} {i * 7}"),
                       "detail": ["hum: stalls", "smell: sharpens", "keys: rattle"][i % 3],
