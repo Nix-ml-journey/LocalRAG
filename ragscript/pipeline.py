@@ -141,6 +141,11 @@ class Pipeline:
         return self._ask("reader", dict(genre=genre, brief=brief, script=script),
                          temperature=0.1, max_tokens=900)
 
+    def compare(self, script_a, script_b, brief, genre):
+        """Which of two scripts for one brief is better, criterion by criterion (eval only): seven lines as text."""
+        return self._ask("compare", dict(genre=genre, brief=brief, script_a=script_a, script_b=script_b),
+                         temperature=0.1, max_tokens=900)
+
     # ---- stages 3 to 6 -------------------------------------------------
     def write(self, brief, genre, minutes, hook, style="", progress=print):
         g = genre_pack.load(self.cfg, genre, style)

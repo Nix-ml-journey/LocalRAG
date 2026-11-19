@@ -657,3 +657,47 @@ def test_reader_prompt_fills_every_placeholder():
     from eval.run_eval import AREAS, parse_reader
     example = out[out.index("The layout below"):]  # the prompt's own sample reply must parse into every scored area
     assert len(parse_reader(example)) == len(AREAS)
+
+
+def test_compare_replies_are_parsed_and_the_two_orderings_combined():
+    from eval.run_eval import combine, parse_compare
+    reply = "Premise: A | fine | \"x\"\nHook: tie | same | \"y\"\nLogic: a clear hole | no | \"z\"\nOverall: B | better | \"w\""
+    first = parse_compare(reply)
+    assert first == {"Premise": "A", "Hook": "tie", "Overall": "B"}  # "a clear hole" is not a vote for A
+    swapped = {"Premise": "B", "Hook": "tie", "Overall": "B"}  # asked with the scripts exchanged
+    assert combine(first, swapped) == {"Premise": "A", "Hook": "tie", "Overall": "tie"}  # Overall: the judge followed position
+
+
+def test_judge_pair_asks_twice_with_the_scripts_swapped_and_counts_position_bias(tmp_path):
+    from eval.run_eval import judge_pair
+    seen = []
+
+    class L(FakeLLM):
+        def chat(self, prompt, **kw):
+            if kw.get("stage") != "compare":
+                return super().chat(prompt, **kw)
+            seen.append((prompt.index("SCRIPT-ONE"), prompt.index("SCRIPT-TWO")))
+            return "\n".join(f"{c}: A | r | \"q\"" for c in ("Premise", "Hook", "Voice", "Prose", "Logic", "Ending", "Overall"))
+
+    result, disagreed = judge_pair(pipeline(tmp_path, L()), "SCRIPT-ONE", "SCRIPT-TWO", "brief", "horror")
+    assert seen[0][0] < seen[0][1] and seen[1][0] > seen[1][1]  # the second question has the scripts exchanged
+    assert set(result.values()) == {"tie"} and disagreed == 7  # always answering "A" is position bias, so all ties
+
+
+def test_pairs_match_the_same_brief_across_two_eval_folders(tmp_path, monkeypatch):
+    from eval import run_eval
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    for folder, stamp in (("a", "1119-070334"), ("b", "1119-080000")):
+        (tmp_path / "output" / folder).mkdir(parents=True)
+        (tmp_path / "output" / folder / f"horror-5min-a-keeper-{stamp}.md").write_text("x")
+        (tmp_path / "output" / folder / f"sci-fi-5min-only-in-{folder}-{stamp}.md").write_text("x")
+    found = run_eval.pairs("a", "b")
+    assert [(p.name, q.name) for p, q in found] == [("horror-5min-a-keeper-1119-070334.md", "horror-5min-a-keeper-1119-080000.md")]
+
+
+def test_compare_prompt_fills_every_placeholder():
+    from eval.run_eval import CRITERIA, parse_compare
+    from ragscript import prompts
+    out = prompts.stage(config.load(), "compare", (), genre="horror", brief="b", script_a="SA", script_b="SB")
+    assert "<<" not in out and "\nSA\n" in out and "\nSB\n" in out
+    assert len(parse_compare(out[out.index("The layout below"):])) == len(CRITERIA)  # the sample reply parses fully

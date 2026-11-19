@@ -6,6 +6,7 @@ import logging
 import re
 import shutil
 import statistics
+from collections import Counter
 
 import yaml
 
@@ -44,6 +45,63 @@ def parse_reader(reply):
     """{area: score} from the reader's reply. An area the reader left out or scored off the 1-5 scale is missing."""
     scores = {a: re.search(rf"(?mi)^\s*{a}\s*:\s*([1-5])\b", reply) for a in AREAS}
     return {a: int(m.group(1)) for a, m in scores.items() if m}
+
+
+CRITERIA = AREAS + ("Overall",)  # the lines of prompts/stages/compare.md
+FLIP = {"A": "B", "B": "A", "tie": "tie"}
+
+
+def parse_compare(reply):
+    """{criterion: "A" | "B" | "tie"} from the judge's reply; a missing or malformed line is left out."""
+    found = {c: re.search(rf"(?mi)^\s*{c}\s*:\s*(A|B|tie)\s*(?:\||$)", reply) for c in CRITERIA}
+    return {c: (m.group(1).upper() if len(m.group(1)) == 1 else "tie") for c, m in found.items() if m}
+
+
+def combine(first, swapped):
+    """Winner per criterion over the two orderings. `swapped` was asked with the scripts exchanged, so its A is the
+    original B. When the orderings disagree the judge followed position, not quality: that criterion is a tie."""
+    return {c: first[c] if first[c] == FLIP[swapped[c]] else "tie" for c in first if c in swapped}
+
+
+def judge_pair(pl, script_a, script_b, brief, genre):
+    """(winner per criterion, how many criteria the two orderings disagreed on) for two scripts of one brief."""
+    first = parse_compare(pl.compare(script_a, script_b, brief, genre))
+    swapped = parse_compare(pl.compare(script_b, script_a, brief, genre))
+    result = combine(first, swapped)
+    return result, sum(first[c] != FLIP[swapped[c]] for c in result)
+
+
+def pairs(dir_a, dir_b):
+    """[(script in dir_a, script in dir_b)] for the same brief in two eval label folders under output/; the match is
+    the file name without its time stamp."""
+    key = lambda p: re.sub(r"-\d{4}-\d{6}$", "", p.stem)
+    found = [{key(p): p for p in sorted((config.ROOT / "output" / d).glob("*.md"))} for d in (dir_a, dir_b)]
+    return [(found[0][k], found[1][k]) for k in found[0] if k in found[1]]
+
+
+def _brief_of(path):
+    """The brief a saved script was written for: from its trace file in output/, else its title."""
+    trace = config.ROOT / "output" / f"{path.stem}.trace.json"
+    if trace.exists():
+        return json.loads(trace.read_text(encoding="utf-8"))["brief"]
+    return path.read_text(encoding="utf-8").splitlines()[0].lstrip("# ")
+
+
+def compare(dir_a, dir_b):
+    """Pairwise judge: for each brief written in both eval label folders, ask the model which script is better per
+    criterion, twice with the order swapped. The judge is the model set in config.yaml, so a fair comparison
+    keeps `llm.model` the same for every run it judges."""
+    logging.basicConfig(level=logging.WARNING)
+    pl, total = Pipeline.from_config(), Counter()
+    for pa, pb in pairs(dir_a, dir_b):
+        genre = re.match(r"(.+?)-\d+min-", pa.name).group(1)
+        result, disagreed = judge_pair(pl, script_of(pa.read_text(encoding="utf-8")),
+                                       script_of(pb.read_text(encoding="utf-8")), _brief_of(pa), genre)
+        wins = Counter(v for c, v in result.items() if c != "Overall")
+        total.update(wins)
+        print(f"{genre:<8} overall={result.get('Overall', '?')}  {dir_a} {wins['A']}  {dir_b} {wins['B']}  tie {wins['tie']}  "
+              f"order-disagreements={disagreed}  " + " ".join(f"{c[:4]}={result.get(c, '-')}" for c in AREAS), flush=True)
+    print(f"\nCriteria won: {dir_a} {total['A']}, {dir_b} {total['B']}, ties {total['tie']} (A = {dir_a}, B = {dir_b})")
 
 
 def _over_limit(s):
