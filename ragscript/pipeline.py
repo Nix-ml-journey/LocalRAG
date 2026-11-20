@@ -59,7 +59,7 @@ def name_details(narrator, beats):
             b.detail = f"{named[int(m.group(1))]}: {m.group(2)}"
 
 
-def build_outline(ask_json, cfg, total, notes=None, brief=""):
+def build_outline(ask_json, cfg, total, notes=None):
     """The outline as (narrator, [Beat]), the whole job in one place. `ask_json(temps, tail="", **model_options)` asks
     the model and returns the parsed dict (beats already `Beat`s) or None. A beat that shows a screen takes its `sees`
     from a neighbour; if the outline still has logic holes, up to two repairs are asked for, each kept only if it has fewer;
@@ -72,10 +72,8 @@ def build_outline(ask_json, cfg, total, notes=None, brief=""):
     beats[-1].plant = ""  # the outro holds the payoff; a plant copied there is no early setup, so it must not count as one
     name_details(str(data.get("narrator", "")), beats)
     logic.fill_sees(beats)
-    check = lambda d: (logic.outline_issues(d["beats"], limit)
-                       + logic.brief_issues(d["beats"], brief, str(d.get("narrator", ""))))
-    for _ in range(2):  # a repair is kept only if it has fewer holes
-        if not (issues := check(data)):
+    for _ in range(2):  # up to two repairs, each kept only if it has fewer holes
+        if not (issues := logic.outline_issues(beats, limit)):
             break
         again = ask_json((0.4,), think=False,
                          tail="\n\nYour previous outline had these logic problems; fix them and output the "
@@ -84,10 +82,10 @@ def build_outline(ask_json, cfg, total, notes=None, brief=""):
             again["beats"][-1].plant = ""
             name_details(str(again.get("narrator", data.get("narrator", ""))), again["beats"])
             logic.fill_sees(again["beats"])
-        if not again or len(check(again)) >= len(issues):
+        if not again or len(logic.outline_issues(again["beats"], limit)) >= len(issues):
             break
         data, beats = again, again["beats"]
-    if (issues := check(data)) and notes is not None:
+    if (issues := logic.outline_issues(beats, limit)) and notes is not None:
         notes.append("Outline logic problems left: " + "; ".join(issues) + ".")
     scale = total / sum(b.words for b in beats)  # force budgets to sum to the target
     floor = max(40, round(total * 0.07))  # tiny beats get padded and repeat earlier text
@@ -154,7 +152,7 @@ class Pipeline:
         def ask_json(temps, tail="", **kw):
             return self._json("outline", tpl_vars, temps, _valid_outline, tail=tail, **kw)
 
-        narrator, beats = build_outline(ask_json, self.cfg, total, notes, brief)
+        narrator, beats = build_outline(ask_json, self.cfg, total, notes)
         return narrator, beats, total
 
     # ---- stages 3 to 6 -------------------------------------------------

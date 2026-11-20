@@ -226,13 +226,6 @@ def test_outline_flags_a_change_that_only_says_something_stays_the_same():
     assert "beat 4" in found and found.count("not an event") == 1
 
 
-def test_outline_that_never_names_the_briefs_nouns_is_flagged():
-    from ragscript import logic
-    beats = [chunking.Beat("hook", 100, summary="A figure stands by the rail.", change="it stares at him")]
-    brief = "a ferry deckhand counts more passengers than tickets sold"
-    found = logic.brief_issues(beats, brief)
-    assert any('"ticket"' in x for x in found) and not any("figure" in x for x in found)
-    beats[0].summary += " He counts tickets and passengers on the ferry; the deckhand is tired."
-    assert logic.brief_issues(beats, brief) == []
-    beats[0].summary = "A figure stands by the rail."
-    assert logic.brief_issues(beats, "a deckhand", "Elias, a ferry deckhand") == []
+def test_stem_keeps_words_that_end_in_us_or_ss():
+    from ragscript.checks import stem
+    assert stem("nervous") == "nervous" and stem("glass") == "glass" and stem("tickets") == "ticket"

@@ -20,7 +20,7 @@ flowchart LR
 ```
 - **Retrieval:** three collections (`scripts` for style, `lore` for facts, `hooks`), each searched with dense vectors (bge-m3) and BM25, merged by reciprocal rank fusion, and filtered by genre and story beat.
 - **A planned story:** the outline gives every beat a word budget, a place, what the narrator looks at, one new event and a recurring detail, and it plants the ending early. Code checks the outline for holes and asks for one repair.
-- **Checks that catch what a small model misses:** a critic call plus code checks for dropped objects used again and details that come back too often; the weakest section is rewritten once, and a fix is kept only if a second look agrees.
+- **Checks that catch what a small model misses:** a critic call plus code checks for dropped objects used again and details that come back too often; the weakest section (and every section with an over-used detail) is rewritten, and a fix is dropped if a second look finds more holes than before.
 - **Guards:** repeated and retold paragraphs are removed, and the length is steered to within 5% of the target.
 - **Grounded history:** facts are tagged `[S#]` to their lore chunk, invented details are wrapped as `{{INVENTED: ...}}`, and a Verify step re-checks them.
 

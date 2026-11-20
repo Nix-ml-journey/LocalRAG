@@ -6,7 +6,7 @@ checks.py."""
 import re
 from collections import Counter
 
-from .checks import FUNC, STOP, content_set, stem
+from .checks import FUNC, content_set, stem
 from .grounding import unmark
 from .text import CUE, sentences, words
 
@@ -14,14 +14,6 @@ from .text import CUE, sentences, words
 _ABSTRACT = re.compile(r"\b(establish\w*|sense of|growing|presence of|realization|transition|introduc\w+|clarified|"
                        r"tension|urgency|remain\w*|stays?|stayed|continues?|still)\b", re.I)
 # words of a `change` that describes a mood or a state that holds, not an event that happens
-
-
-def brief_issues(beats, brief, narrator=""):
-    """The brief's own nouns that no beat mentions: an outline that drifted from the premise (a story about counting
-    tickets that never says "ticket")."""
-    have = {stem(w) for w in content_set(narrator + " " + " ".join(str(v) for b in beats for v in vars(b).values()))}
-    miss = sorted({stem(w) for w in words(brief) if len(w) >= 5 and w not in STOP} - have)
-    return [f'no beat mentions "{w}", which the brief is about' for w in miss]
 
 
 def outline_issues(beats, limit):

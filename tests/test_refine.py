@@ -130,7 +130,7 @@ def test_critic_issues_reach_the_revision_prompt(tmp_path):
     assert any("booth and the hall at once" in p for p in seen)
 
 
-def test_a_logic_rewrite_is_kept_only_when_a_second_critic_call_finds_no_hole(tmp_path):
+def test_a_logic_rewrite_is_dropped_only_when_a_second_critic_call_finds_more_holes(tmp_path):
     from tests.support import FakeLLM
 
     def run(second_answer):
@@ -145,8 +145,9 @@ def test_a_logic_rewrite_is_kept_only_when_a_second_critic_call_finds_no_hole(tm
 
         return write(pipeline(tmp_path, L()))["markdown"]
 
-    assert "second critic call found no logic hole left" in run("NONE")
-    assert "second critic call still found a logic hole" in run("2: still two places")
+    assert "logic holes: 1 before, 0 after" in run("NONE")
+    assert "logic holes: 1 before, 1 after" in run("2: still two places")  # no new hole: the rewrite stays
+    assert "found more logic holes" in run("2: one hole\n2: another hole")
 
 
 def test_the_critic_reply_is_read_whatever_its_list_format():

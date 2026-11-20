@@ -258,13 +258,14 @@ class Refiner:
                                  temperature=0.5, max_tokens=int(before * 2.2)),
                 lambda n: (ln["polish_min"] * before <= checks.spoken_count(n) <= ln["polish_max"] * before
                            and len(final_issues(n, earlier, self.cfg, self.banned)) < len(issues[i])))
-            was_logic = any(x.kind == "logic" for x in issues[i])  # not `logic`: the critic's issues, used next round
-            if kept and was_logic and i in self.critique(parts[:i] + [new] + parts[i + 1:], story):
+            holes = sum(x.kind == "logic" for x in issues[i])  # not `logic`: the critic's issues, used next round
+            left = len(self.critique(parts[:i] + [new] + parts[i + 1:], story).get(i, [])) if kept and holes else 0
+            if kept and left > holes:  # the critic is a noisy small model: only a rewrite that adds holes is thrown out
                 story.notes.append(f"Revision of section {i + 1} rejected; "
-                                   "a second critic call still found a logic hole there.")
+                                   "a second critic call found more logic holes there than before.")
             elif kept:
                 story.notes.append(f"Revised section {i + 1} to fix: {_note(issues[i])}."
-                                   + (" (a second critic call found no logic hole left)" if was_logic else ""))
+                                   + (f" (logic holes: {holes} before, {left} after)" if holes else ""))
                 parts = parts[:i] + [new] + parts[i + 1:]
             else:
                 story.notes.append(f"Revision of section {i + 1} rejected; polished text kept.")

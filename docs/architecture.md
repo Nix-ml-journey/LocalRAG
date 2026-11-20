@@ -6,7 +6,7 @@
 3. **Write.** `Drafter.draft` writes each beat with retrieval per beat, a rolling word budget and a rolling summary labelled "already told", and one corrective retry.
 4. **Refine** (`Refiner.run`):
    - polish each section on its own;
-   - one critic call lists logic holes in the whole script, and code adds holes the critic can miss (a dropped object used again, a recurring detail past its limit); the section with the most issues is rewritten once, and a logic rewrite is kept only if a second critic call no longer finds the hole;
+   - one critic call lists logic holes in the whole script, and code adds holes the critic can miss (a dropped object used again, a recurring detail past its limit); the section with the most issues is rewritten (plus every section with an over-used detail), and a logic rewrite is dropped only if a second critic call finds more holes than before;
    - the last section is written several ways and the pairwise judge keeps the best;
    - the repeat guard removes repeated paragraphs, retellings in new words and repeated sentences;
    - the length fit steers the total to within 5% of the target.

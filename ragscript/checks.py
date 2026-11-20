@@ -214,7 +214,7 @@ def repeated_rate_outside(text, n, setting) -> float:
 
 
 def stem(w):
-    return w[:-1] if len(w) > 4 and w.endswith("s") else w
+    return w[:-1] if len(w) > 4 and w.endswith("s") and not w.endswith(("ss", "us")) else w  # "nervous" stays
 
 
 def topic_words(brief):
