@@ -264,4 +264,34 @@ def test_fix_overuse_rewrites_a_section_that_still_holds_the_detail_but_not_the_
     story = Story("b", g, "Eli", 750, 5, notes=[], details=["brass key"])
     out = Refiner(ask, cfg, []).fix_overuse(parts, story)
     assert out == [old, old, new, old] and len(asked) == 1  # the 3rd section, not the ending; then no excess is left
-    assert "over-used detail" in story.notes[0]
+    assert "repeated wording" in story.notes[0]
+
+
+def test_fix_overuse_rewrites_a_crutch_word_but_not_the_briefs_own_words():
+    from ragscript import genre
+    from ragscript.refine import Refiner
+    cfg = config.load()
+    g = genre.load(cfg, "horror")
+    heavy = "I felt the heavy door while heavy boots echoed and a heavy chain hung there; heavy rain fell on heavy stone."
+    parts = [heavy, "I walked on through the quiet hall, and nothing else moved there at all that night.",
+             "I stopped. Something in the dark ahead of me breathed slowly, and I waited for it to pass by.", "End."]
+    asked = []
+
+    def ask(stage, vars_, **kw):
+        asked.append(vars_["problems"])
+        return "I felt the door while boots echoed and a chain hung there; rain fell."
+
+    story = Story("a heavy door at night", g, "Eli", 750, 5, notes=[], details=[])
+    Refiner(ask, cfg, []).fix_overuse(parts, story)
+    assert asked == [] and story.notes == [], "'heavy' is in the brief, so it is the setting, not a crutch"
+    story = Story("a hall at night", g, "Eli", 750, 5, notes=[], details=[])
+    Refiner(ask, cfg, []).fix_overuse(parts, story)
+    assert asked and '"heavy"' in asked[0]
+
+
+def test_a_rewrite_with_a_note_in_the_middle_of_a_sentence_is_dropped_not_left_with_a_hole():
+    from ragscript.refine import attempt
+    old = "I smelled the dust while the old scent filled my lungs."
+    assert attempt(old, lambda: "I smelled it while the [dry scent] filled my lungs.", lambda n: True) == (old, False)
+    new = "I smelled the dust.\n[PAUSE]\nIt filled my lungs. [SFX: wind] The door opened. [recurring]"
+    assert attempt(old, lambda: new, lambda n: True)[1], "cues and a note at the end of a line are fine"

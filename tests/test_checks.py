@@ -229,3 +229,11 @@ def test_outline_flags_a_change_that_only_says_something_stays_the_same():
 def test_stem_keeps_words_that_end_in_us_or_ss():
     from ragscript.checks import stem
     assert stem("nervous") == "nervous" and stem("glass") == "glass" and stem("tickets") == "ticket"
+
+
+def test_snake_case_leaks_become_words_and_a_third_person_ending_is_flagged():
+    from ragscript import logic
+    assert checks.tidy("dry as the salt_pans on the ridge.") == "dry as the salt pans on the ridge."
+    mine = "I walked down the long hall and I listened to the quiet room around me for a very long time."
+    text = "\n\n".join([mine] * 4 + ["The next morning a courier found the desk empty and the old letters lying in gray dust."])
+    assert logic.left_first_person(text) and not logic.left_first_person(text.replace("The next morning a", "I saw a"))

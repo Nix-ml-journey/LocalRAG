@@ -128,8 +128,9 @@ def repeated_wording(text, n=5, top=5):
 
 def tidy(text):
     """Layout clean-up of a finished script: no leading or trailing spaces on a line, a [PAUSE] glued to the end of a
-    sentence goes on its own line, and a [PAUSE] directly followed by another is dropped. Words are unchanged."""
-    t = "\n".join(line.strip() for line in text.split("\n"))
+    sentence goes on its own line, and a [PAUSE] directly followed by another is dropped. A snake_case word the model
+    leaked ("salt_pans") becomes two words."""
+    t = "\n".join(line.strip() for line in re.sub(r"(?<=[a-z])_(?=[a-z])", " ", text).split("\n"))
     t = re.sub(r"(?m)(\S)[ \t]+\[PAUSE\]$", r"\1\n\n[PAUSE]", t)
     t = re.sub(r"\[PAUSE\]\s*(?=\[PAUSE\])", "", t)
     return re.sub(r"\n{3,}", "\n\n", t).strip()

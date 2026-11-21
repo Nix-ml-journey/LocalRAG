@@ -166,6 +166,18 @@ def new_in_ending(text, top=4):
     return out[:top]
 
 
+_I = re.compile(r"\b(?:I|my|me|myself|we|our|us)\b")
+
+
+def left_first_person(text):
+    """True when the last paragraph never says I, my or we while most earlier ones do: the narration slipped to a
+    third-person ending ("a courier found my desk"). A word match, so it is a flag for a rewrite, not a verdict."""
+    paras = [p for p in (CUE.sub("", unmark(q)).strip() for q in re.split(r"\n\s*\n", text)) if len(p.split()) >= 12]
+    if len(paras) < 4 or _I.search(paras[-1]):
+        return False
+    return sum(bool(_I.search(p)) for p in paras[:-1]) >= 0.8 * (len(paras) - 1)
+
+
 _DROP = re.compile(r"\b(?:dropped|abandoned|flung|hurled)\s+(?:my|the|his)\s+(\w+(?:\s+\w+)?)"
                    r"|\bmy\s+(\w+)\s+(?:hit|fell to|clattered (?:to|onto|across)|skidded across|slid across)\s+the\b", re.I)
 _USE = re.compile(r"\b(?:held|holding|gripp\w*|clutch\w*|scratch\w*|jingl\w*|rattl\w*|unlock\w*|press\w*|using|dial\w*|"

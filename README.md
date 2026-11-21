@@ -33,10 +33,10 @@ Measured on this machine (`num_ctx` 16384). Single runs; quality metrics swing a
 |---|---|
 | Retrieval, 17 briefs (`cli.py eval --retrieval-only`) | right source at top 1: 0.87, top 3: 0.91, top 10: 0.91; 16 of 17 briefs hit. Measured before 100 fantasy stories and two novels were added |
 | Three briefs (horror, history, Cthulhu), 5 min, target 750 | accuracy 97.1% mean (736-780 words), repeats 3.1%, no tense switches, 1.0 `[PAUSE]` per minute, sentences 15.6 words |
-| Three briefs (horror, fantasy, sci-fi), 5 min, planned ending | accuracy 99.3%, repeats 2.2% (1.0% outside the setting words), no detail over its limit, sentences 15.7 words |
+| Ten briefs (`cli.py eval --minutes 5`), final code | accuracy 97.3%, repeats 2.6% (0.9% outside the setting words), sentences 15.9 words, no detail over its limit (4 returns), no outline holes left, 10 of 10 logic rewrites kept; retrieval hit 9 of 10 |
 | History 5-min script with Verify | 722 words (96.3%), repeats 4.3%, 14 sentences marked `{{INVENTED}}` |
 | Speed | about 2.5-7 min per 5-min script (about 1 more with the ending choice); decode-bound at ~40-45 tokens/s |
-| Offline tests (no GPU, no Ollama) | 110 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
+| Offline tests (no GPU, no Ollama) | 113 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
 
 Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks claims the lore does not support, `[S1]` marks facts that do):
 > On December 4, 1872, the *Dei Gratia* spotted her sailing erratically in the Atlantic [S1]. No one answered their signals, and a boarding party found the ship completely deserted [S1].

@@ -37,10 +37,18 @@ def clean_reply(text):
     return clean_draft(whole_sentences(text))
 
 
+# a note right after "the", "with a", "while" ...: it stood in for a noun, and stripping it leaves a hole
+_NOTE_IN_SENTENCE = re.compile(r"(?i)\b(?:the|an?|my|his|her|its|their|our|with|while|that|of|and|to|as)[ \t]+"
+                               r"\[(?!(?:PAUSE|SFX:|B-ROLL:|S\d+\]))[^\]\n]*\][ \t]*[A-Za-z.,;]")
+
+
 def attempt(old, produce, accept):
     """Ask for a replacement of `old` and keep it only if `accept(new)`. Returns (text, kept). The one place that
     cleans a rewrite and decides to keep or revert it, so no pass can make the script worse."""
-    new = clean_reply(produce())
+    raw = produce()
+    if _NOTE_IN_SENTENCE.search(raw):  # stripping a note from mid-sentence leaves a hole ("while the filled my lungs")
+        return old, False
+    new = clean_reply(raw)
     return (new, True) if accept(new) else (old, False)
 
 
@@ -189,6 +197,10 @@ class Refiner:
         for noun, i in logic.dropped_then_used(parts):  # a code check, so the critic cannot miss it
             if not any(noun in x.message for x in out.get(i, [])):
                 out.setdefault(i, []).append(Issue("logic", f"the narrator dropped the {noun} earlier but uses it here"))
+        last = max((j for j, p in enumerate(parts) if p.strip()), default=0)
+        if logic.left_first_person("\n\n".join(parts)):
+            out.setdefault(last, []).append(Issue("logic", "the ending leaves the narrator's first person: "
+                                                           "write it as I/my, from what the narrator sees"))
         limit = self.cfg["checks"]["motif_max"]
         for name, i in logic.detail_overuse(parts, story.details, limit):  # a detail past its limit: change it here
             out.setdefault(i, []).append(Issue("logic", f'the recurring detail "{name}" already came back {limit} times '
@@ -272,23 +284,44 @@ class Refiner:
                 story.notes.append(f"Revision of section {i + 1} rejected; polished text kept.")
         return parts
 
-    def fix_overuse(self, parts, story, max_calls=2):
-        """After the ending is chosen, rewrite a section that still holds a detail past `checks.motif_max`. The last
-        section is left alone while another can be changed (the ending reuses the planted detail on purpose). A rewrite
-        is kept only if it leaves fewer over-used paragraphs and stays near its length."""
+    def worn_words(self, parts, story):
+        """[(problem for the rewrite, section index)] for the wording a reader hears as a tic: a crutch word ("heavy")
+        and a phrase that returns in the same words. The brief's own words and the outline's details are the setting
+        and are never listed. The section picked is the one using it most (the last repeat of a phrase)."""
+        ck, text = self.cfg["checks"], "\n\n".join(parts)
+        skip = checks.topic_words(story.brief) | checks.setting_words(*story.details)
+        out = []
+        for w, _ in checks.overused_words(text, ck, skip=skip):
+            use = [sum(x == w for x in checks.words(grounding.unmark(p))) for p in parts]
+            out.append((f'the word "{w}" is used all over the script; use it here at most once, '
+                        "with a more specific word for the rest", use.index(max(use))))
+        for phrase, n in checks.repeated_wording(text):
+            if n > ck["wording_max"]:
+                held = [i for i, p in enumerate(parts) if phrase in " ".join(checks.words(grounding.unmark(p)))]
+                if held:
+                    out.append((f'the phrase "{phrase}" returns in the same words; say it a new way here', held[-1]))
+        return out
+
+    def fix_overuse(self, parts, story, max_calls=4):
+        """After the ending is chosen, rewrite a section that still holds a detail past `checks.motif_max`, a crutch
+        word or a phrase that keeps returning in the same words. The last section is left alone while another can be
+        changed (the ending reuses the planted detail on purpose). A rewrite is kept only if it leaves fewer such
+        problems and stays near its length."""
         limit, ln = self.cfg["checks"]["motif_max"], self.cfg["length"]
         last = max((j for j, p in enumerate(parts) if p.strip()), default=0)
+        count = lambda ps: len(logic.detail_overuse(ps, story.details, limit)) + len(self.worn_words(ps, story))
         for _ in range(max_calls):
             over = logic.detail_overuse(parts, story.details, limit)
-            pick = [(n, i) for n, i in over if i != last]
+            pick = [(p, i) for p, i in self.worn_words(parts, story) if i != last]
+            pick += [(f'the recurring detail "{n}" already came back {limit} times; remove it here or change it '
+                      "completely (a new image, not the same words)", i) for n, i in over if i != last]
             if not pick and over:  # only the ending is past the limit: thin out the detail in the section before it
-                pick = [(n, i) for n, i in logic.detail_overuse(parts, story.details, 0) if i != last and n == over[0][0]]
+                pick = [(f'the recurring detail "{n}" came back too often; change it completely here', i)
+                        for n, i in logic.detail_overuse(parts, story.details, 0) if i != last and n == over[0][0]]
             if not pick:
                 break
-            name, i = pick[-1]
-            before, earlier = checks.spoken_count(parts[i]), "\n\n".join(parts[:i])
-            problem = (f'the recurring detail "{name}" already came back {limit} times; remove it here or change it '
-                       "completely (a new image, not the same words)")
+            problem, i = pick[-1]
+            before, earlier, worn = checks.spoken_count(parts[i]), "\n\n".join(parts[:i]), count(parts)
             new, kept = attempt(
                 parts[i],
                 lambda: self.ask("revise", dict(text=parts[i], narrator=story.narrator, genre_rules=story.genre.rules,
@@ -297,12 +330,11 @@ class Refiner:
                 lambda n: (ln["polish_min"] * before <= checks.spoken_count(n) <= ln["polish_max"] * before
                            and len(final_issues(n, earlier, self.cfg, self.banned)) <=
                            len(final_issues(parts[i], earlier, self.cfg, self.banned))
-                           and len(logic.detail_overuse(parts[:i] + [n] + parts[i + 1:], story.details, limit))
-                           < len(over)))
+                           and count(parts[:i] + [n] + parts[i + 1:]) < worn))
             if not kept:
                 break
             parts = parts[:i] + [new] + parts[i + 1:]
-            story.notes.append(f'Rewrote section {i + 1} to cut back the over-used detail "{name}".')
+            story.notes.append(f"Rewrote section {i + 1} to cut back repeated wording: {problem.split(';')[0]}.")
         return parts
 
     def fit_length(self, parts, budgets, story, max_calls=7):
