@@ -186,8 +186,10 @@ class Refiner:
         text = "\n\n".join(parts)
         hints = ", ".join(logic.unused_objects(text)) or "(none)"
         ending = ", ".join(logic.new_in_ending(text)) or "(none)"
+        state = self.ask("tracker", dict(text=numbered), temperature=0.0, max_tokens=500)  # facts first, then judge
         reply = self.ask("critic", dict(narrator=story.narrator, outline=story.outline, text=numbered, hints=hints,
-                                        ending_hints=ending), temperature=0.2, max_tokens=300)
+                                        ending_hints=ending, state=state.strip() or "(none)"),
+                         temperature=0.2, max_tokens=300)
         out = {}
         # "2: ...", "2) ...", "- 2. ..." and "Section 2: ..." all name section 2
         for m in re.finditer(r"(?mi)^\s*(?:[-*]\s*)?(?:section\s*)?\[?(\d+)\]?\s*[:.)-]\s*(\S.*)$", reply):

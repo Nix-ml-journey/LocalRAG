@@ -36,7 +36,7 @@ Measured on this machine (`num_ctx` 16384). Single runs; quality metrics swing a
 | Ten briefs (`cli.py eval --minutes 5`), final code | accuracy 97.3%, repeats 2.6% (0.9% outside the setting words), sentences 15.9 words, no detail over its limit (4 returns), no outline holes left, 10 of 10 logic rewrites kept; retrieval hit 9 of 10 |
 | History 5-min script with Verify | 722 words (96.3%), repeats 4.3%, 14 sentences marked `{{INVENTED}}` |
 | Speed | about 2.5-7 min per 5-min script (about 1 more with the ending choice); decode-bound at ~40-45 tokens/s |
-| Offline tests (no GPU, no Ollama) | 113 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
+| Offline tests (no GPU, no Ollama) | 114 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
 
 Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks claims the lore does not support, `[S1]` marks facts that do):
 > On December 4, 1872, the *Dei Gratia* spotted her sailing erratically in the Atlantic [S1]. No one answered their signals, and a boarding party found the ship completely deserted [S1].

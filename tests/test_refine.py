@@ -295,3 +295,19 @@ def test_a_rewrite_with_a_note_in_the_middle_of_a_sentence_is_dropped_not_left_w
     assert attempt(old, lambda: "I smelled it while the [dry scent] filled my lungs.", lambda n: True) == (old, False)
     new = "I smelled the dust.\n[PAUSE]\nIt filled my lungs. [SFX: wind] The door opened. [recurring]"
     assert attempt(old, lambda: new, lambda n: True)[1], "cues and a note at the end of a line are fine"
+
+
+def test_the_critic_is_given_the_place_and_hands_the_tracker_wrote_for_each_section():
+    from ragscript import genre
+    from ragscript.refine import Refiner
+    cfg = config.load()
+    seen = {}
+
+    def ask(stage, vars_, **kw):
+        seen[stage] = vars_
+        return "1: place=lantern room; holding=logbook" if stage == "tracker" else "2: the logbook is on a table but in hand"
+
+    story = Story("b", genre.load(cfg, "horror"), "Eli", 750, 5, notes=[])
+    out = Refiner(ask, cfg, []).critique(["I held the logbook.", "I put it down."], story)
+    assert "holding=logbook" in seen["critic"]["state"] and "[2]" in seen["tracker"]["text"]
+    assert out[1][0].message.startswith("the logbook")

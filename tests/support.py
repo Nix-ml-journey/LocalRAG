@@ -64,6 +64,8 @@ class FakeLLM:
             return prompt.split("Section to rewrite:\n", 1)[1].strip()
         if stage == "revise":  # a model that does not fix anything
             return prompt.split("Section to revise:\n", 1)[1].split("\n\nFix exactly", 1)[0].strip()
+        if stage == "tracker":
+            return "1: place=room; holding=nothing; with=nobody"
         if stage == "critic":
             return "NONE"
         if stage == "summary":
