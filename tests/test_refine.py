@@ -197,7 +197,9 @@ def test_two_rewrite_rounds_keep_the_critic_issues_for_the_second_round(tmp_path
 def test_a_detail_past_its_limit_becomes_a_logic_issue_for_the_critic_to_fix(tmp_path):
     from types import SimpleNamespace
     from ragscript.refine import Refiner
-    ref = Refiner(lambda *a, **k: "NONE", pipeline(tmp_path).cfg, [])
+    cfg = pipeline(tmp_path).cfg
+    cfg["checks"]["motif_max"] = 3
+    ref = Refiner(lambda *a, **k: "NONE", cfg, [])
     parts = ["The hum filled the booth.", "The hum stalled.", "The hum rose.", "The hum came back once more."]
     found = ref.critique(parts, SimpleNamespace(narrator="n", outline="o", details=["hum"]))
     assert list(found) == [3] and 'recurring detail "hum"' in found[3][0].message
@@ -250,6 +252,7 @@ def test_fix_overuse_rewrites_a_section_that_still_holds_the_detail_but_not_the_
     cfg = config.load()
     g = genre.load(cfg, "horror")
     old = "I held the brass key tight while the rain hammered the roof above me and the lamps flickered low."
+    cfg["checks"]["motif_max"] = 3
     parts = [old, old, old, old]  # the key is in 4 paragraphs, the limit is 3
     new = "I gripped the cold handle tight while the rain hammered the roof above me and the lamps flickered low."
     asked = []

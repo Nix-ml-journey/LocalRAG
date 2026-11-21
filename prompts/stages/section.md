@@ -35,7 +35,7 @@ Too choppy: The door was old. It creaked. I pushed it open. Dust fell. The room 
 Right: The old door creaked as I pushed it open, and a thin curtain of dust drifted down past the lantern light. I stepped into the dark room. Nothing moved.
 Join an action to its detail with "and", "as", "while" or "because" instead of a full stop.
 - Every sentence must add something new: an action, a detail or a thought. Never restate what was already said, in this section or in earlier ones.
-- Recurring details (a sound, smell or object from the narrator bible or an earlier section) are welcome: they make the place real. Use each at most 3 times in the whole story, never in two sections in a row. Each return must change: how it sounds or feels, what it does to the narrator, or what it means. Never repeat an earlier sentence or its opening words, and do not start two paragraphs with the same words.
+- Recurring details (a sound, smell or object from the narrator bible or an earlier section) are welcome: they make the place real. Use each at most 4 times in the whole story, never in two sections in a row. Each return must change: how it sounds or feels, what it does to the narrator, or what it means. Never repeat an earlier sentence or its opening words, and do not start two paragraphs with the same words.
 Recurring-detail example (shows the idea only; never copy its wording or content):
 Copied: The hum of the vents filled the room as I watched the screen. (later) The hum of the vents filled the hall as I watched the screen.
 Right: The hum of the vents filled the room as I watched the screen. (later) The hum of the vents stalled for one heartbeat, then went on as if nothing had happened.

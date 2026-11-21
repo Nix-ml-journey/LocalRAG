@@ -16,7 +16,7 @@ Target length: <<target_words>> words. Stay within plus or minus 5% of it.
 
 Edit for:
 - Pacing: vary sentence length, cut dead air, keep momentum.
-- Repetition: cut repeated words, ideas and sentence openings, and any detail that comes back in the same words. Keep a recurring detail from the bible when each return has changed (a different sound, effect or meaning); if one returns more than 3 times in the script, cut the weakest returns.
+- Repetition: cut repeated words, ideas and sentence openings, and any detail that comes back in the same words. Keep a recurring detail from the bible when each return has changed (a different sound, effect or meaning); if one returns more than 4 times in the script, cut the weakest returns.
 - Sentence rhythm: a narrator reads this aloud on camera, and strings of 4-6 word sentences sound clipped and robotic. The average must be <<sentence_range>> words per sentence. Join fragments into medium sentences with "and", "as", "while" or "because"; keep a short sentence (3-6 words) only for impact, never two in a row. Most sentences should land between 10 and 18 words.
 - Easy to speak: replace hard-to-pronounce phrases and tongue-twisting names where a simpler wording keeps the meaning.
 - Narrator consistency: voice, age, job, and the recurring details from the bible.

@@ -59,7 +59,7 @@ checks:
   tense_floor: 3            # a narrator switched tense when both tenses appear this often ...
   tense_share: 0.2          # ... and the rarer one is this share of all first-person verbs
   repeat_flag: 0.03         # a script repeating more than this share of phrases outside the setting words is flagged
-  motif_max: 3              # a detail may return this often in the script; more is flagged (the same wording twice is listed)
+  motif_max: 4              # a detail may return this often in the script; more is flagged (the same wording twice is listed)
   crowd_min: 5              # a crutch word (5+ letters) is used this often in the script ...
   crowd_share: 0.006        # ... and makes up more than this share of all words
 

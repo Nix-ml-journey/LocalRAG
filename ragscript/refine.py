@@ -47,7 +47,7 @@ def attempt(old, produce, accept):
 def _repeat_issues(text, earlier, ck):
     out = []
     if checks.repeated_rate(text, ck["repeated_ngram"]) > ck["section_repeat"]:
-        out.append(Issue("repeats", "it repeated its own paragraphs or refrains; use each recurring detail at most 3 times "
+        out.append(Issue("repeats", "it repeated its own paragraphs or refrains; use each recurring detail at most 4 times "
                                      "in the story, changed each time"))
     if earlier and checks.overlap_flags(text, [earlier], 4, ck["earlier_overlap"]):
         out.append(Issue("retold", "it repeated earlier paragraphs; write only NEW events that move the story forward"))
