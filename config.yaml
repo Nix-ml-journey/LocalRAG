@@ -16,6 +16,7 @@ llm:
   repeat_penalty: 1.1       # curbs the looping small models fall into on long prose
   think_outline: false      # thinking was used up on the token budget with no JSON (185 s lost in a run); the outline retry already runs without it
   keep_alive: 10m
+  timeout: 600              # seconds one model call may take before it fails (a hung Ollama once blocked a run for 5 hours)
   parallel: 1               # polish calls in flight at once; raise only together with OLLAMA_NUM_PARALLEL (see README)
 
 embedding:

@@ -17,7 +17,7 @@ class LLM:
     def __init__(self, cfg: dict):
         c = cfg["llm"]
         self.c = c
-        self.client = ollama.Client(host=c["host"])
+        self.client = ollama.Client(host=c["host"], timeout=c["timeout"])  # a hung Ollama must fail, not block a run
         self.ctx = c["num_ctx"]
         self._think_ok = True
 
