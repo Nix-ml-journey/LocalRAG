@@ -242,3 +242,23 @@ def test_every_over_used_detail_gets_a_rewrite_even_past_the_configured_number()
     Refiner(lambda s, v, **kw: calls.append(s) or "Fresh words now.", cfg, []).revise_weakest(
         parts, Story("b", g, "Eli", 750, 5, notes=[]), hole)
     assert calls.count("revise") == 3
+
+
+def test_fix_overuse_rewrites_a_section_that_still_holds_the_detail_but_not_the_last_one():
+    from ragscript import genre
+    from ragscript.refine import Refiner
+    cfg = config.load()
+    g = genre.load(cfg, "horror")
+    old = "I held the brass key tight while the rain hammered the roof above me and the lamps flickered low."
+    parts = [old, old, old, old]  # the key is in 4 paragraphs, the limit is 3
+    new = "I gripped the cold handle tight while the rain hammered the roof above me and the lamps flickered low."
+    asked = []
+
+    def ask(stage, vars_, **kw):
+        asked.append(vars_["text"])
+        return new
+
+    story = Story("b", g, "Eli", 750, 5, notes=[], details=["brass key"])
+    out = Refiner(ask, cfg, []).fix_overuse(parts, story)
+    assert out == [old, old, new, old] and len(asked) == 1  # the 3rd section, not the ending; then no excess is left
+    assert "over-used detail" in story.notes[0]

@@ -130,6 +130,7 @@ class Refiner:
         stage("Choosing the ending…")
         parts = self.best_ending(parts, story)
         parts = self.dedupe_parts(parts, story)  # before the fit, so the fit sees the real length and makes it up
+        parts = self.fix_overuse(parts, story)  # the ending and the dedupe can bring a detail back after the revision
         stage("Fitting length…")
         return self.fit_length(parts, [b.words for b, _ in sections], story)
 
@@ -269,6 +270,39 @@ class Refiner:
                 parts = parts[:i] + [new] + parts[i + 1:]
             else:
                 story.notes.append(f"Revision of section {i + 1} rejected; polished text kept.")
+        return parts
+
+    def fix_overuse(self, parts, story, max_calls=2):
+        """After the ending is chosen, rewrite a section that still holds a detail past `checks.motif_max`. The last
+        section is left alone while another can be changed (the ending reuses the planted detail on purpose). A rewrite
+        is kept only if it leaves fewer over-used paragraphs and stays near its length."""
+        limit, ln = self.cfg["checks"]["motif_max"], self.cfg["length"]
+        last = max((j for j, p in enumerate(parts) if p.strip()), default=0)
+        for _ in range(max_calls):
+            over = logic.detail_overuse(parts, story.details, limit)
+            pick = [(n, i) for n, i in over if i != last]
+            if not pick and over:  # only the ending is past the limit: thin out the detail in the section before it
+                pick = [(n, i) for n, i in logic.detail_overuse(parts, story.details, 0) if i != last and n == over[0][0]]
+            if not pick:
+                break
+            name, i = pick[-1]
+            before, earlier = checks.spoken_count(parts[i]), "\n\n".join(parts[:i])
+            problem = (f'the recurring detail "{name}" already came back {limit} times; remove it here or change it '
+                       "completely (a new image, not the same words)")
+            new, kept = attempt(
+                parts[i],
+                lambda: self.ask("revise", dict(text=parts[i], narrator=story.narrator, genre_rules=story.genre.rules,
+                                                target_words=before, problems="- " + problem),
+                                 temperature=0.5, max_tokens=int(before * 2.2)),
+                lambda n: (ln["polish_min"] * before <= checks.spoken_count(n) <= ln["polish_max"] * before
+                           and len(final_issues(n, earlier, self.cfg, self.banned)) <=
+                           len(final_issues(parts[i], earlier, self.cfg, self.banned))
+                           and len(logic.detail_overuse(parts[:i] + [n] + parts[i + 1:], story.details, limit))
+                           < len(over)))
+            if not kept:
+                break
+            parts = parts[:i] + [new] + parts[i + 1:]
+            story.notes.append(f'Rewrote section {i + 1} to cut back the over-used detail "{name}".')
         return parts
 
     def fit_length(self, parts, budgets, story, max_calls=7):
