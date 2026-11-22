@@ -19,8 +19,8 @@ flowchart LR
     V --> M[Markdown: titles, thumbnails,<br/>script, chapters, tags, checks]
 ```
 - **Retrieval:** three collections (`scripts` for style, `lore` for facts, `hooks`), each searched with dense vectors (bge-m3) and BM25, merged by reciprocal rank fusion, and filtered by genre and story beat.
-- **A planned story:** the outline gives every beat a word budget, a place, what the narrator looks at, one new event and a recurring detail, and it plants the ending early. Code checks the outline for holes and asks for one repair.
-- **Checks that catch what a small model misses:** a critic call plus code checks for dropped objects used again and details that come back too often; the weakest section (and every section with an over-used detail) is rewritten, and a fix is dropped if a second look finds more holes than before.
+- **A planned story:** the outline gives every beat a word budget, a place, what the narrator looks at, one new event and a recurring detail, and it plants the ending early. Code checks the outline for holes and asks for up to two repairs.
+- **Checks that catch what a small model misses:** a tracker call writes where the narrator is and what they hold in each section, a critic call compares those lines, and code checks add dropped objects used again and details that come back too often; the weakest section (and every section with an over-used detail) is rewritten, and a fix is dropped if a second look finds more holes than before. After the ending is chosen, crutch words and phrases that return in the same words are rewritten, and the last tics are trimmed by rule.
 - **Guards:** repeated and retold paragraphs are removed, and the length is steered to within 5% of the target.
 - **Grounded history:** facts are tagged `[S#]` to their lore chunk, invented details are wrapped as `{{INVENTED: ...}}`, and a Verify step re-checks them.
 
@@ -31,12 +31,13 @@ Measured on this machine (`num_ctx` 16384). Single runs; quality metrics swing a
 
 | Check | Result |
 |---|---|
-| Retrieval, 17 briefs (`cli.py eval --retrieval-only`) | right source at top 1: 0.87, top 3: 0.91, top 10: 0.91; 16 of 17 briefs hit. Measured before 100 fantasy stories and two novels were added |
+| Retrieval, 17 briefs (`cli.py eval --retrieval-only`) | right source at top 1: 0.87, top 3: 0.91, top 10: 0.91; 16 of 17 briefs hit. Re-measured after the Buffalo Hunter Hunter was added; Machen and Wells came after and were not re-measured |
 | Three briefs (horror, history, Cthulhu), 5 min, target 750 | accuracy 97.1% mean (736-780 words), repeats 3.1%, no tense switches, 1.0 `[PAUSE]` per minute, sentences 15.6 words |
-| Ten briefs (`cli.py eval --minutes 5`), final code | accuracy 97.3%, repeats 2.6% (0.9% outside the setting words), sentences 15.9 words, no detail over its limit (4 returns), no outline holes left, 10 of 10 logic rewrites kept; retrieval hit 9 of 10 |
+| Ten briefs (`cli.py eval --ids b01,...,b10 --minutes 5`), latest code | accuracy 98.2%, repeats 2.2% (0.8% outside the setting words), sentences 16.0 words, no detail over its limit, no tense switches; retrieval hit 9 of 10 |
+| Same ten scripts read by me with the six-area reader prompt (1-5 each, 30 total) | mean 18.6 of 30 (range 16-20, four scripts at 20); over four runs 17.3, 17.5, 18.6, 18.6. One reader, so it is a trend, not a measurement; Prose is 2 on all ten |
 | History 5-min script with Verify | 722 words (96.3%), repeats 4.3%, 14 sentences marked `{{INVENTED}}` |
 | Speed | about 2.5-7 min per 5-min script (about 1 more with the ending choice); decode-bound at ~40-45 tokens/s |
-| Offline tests (no GPU, no Ollama) | 115 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
+| Offline tests (no GPU, no Ollama) | 116 pass, including an end-to-end repeat guard that fails if the dedupe is removed |
 
 Unedited excerpt (history, "The Mary Celeste", gemma4:12b; `{{INVENTED}}` marks claims the lore does not support, `[S1]` marks facts that do):
 > On December 4, 1872, the *Dei Gratia* spotted her sailing erratically in the Atlantic [S1]. No one answered their signals, and a boarding party found the ship completely deserted [S1].

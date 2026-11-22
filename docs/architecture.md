@@ -2,14 +2,16 @@
 
 ## The pipeline
 1. **Hooks.** Three hook options for the brief, using the hooks collection as examples.
-2. **Outline.** One JSON call gives the narrator and 7 beats (hook, setup, rising tension, reveal, climax, aftermath, outro). Each beat has a word budget, `place`, `sees`, `change`, `detail`, and the ending is planned with a `plant` and a `payoff`. Code checks the outline for holes and asks for one repair (`pipeline.build_outline`).
+2. **Outline.** One JSON call gives the narrator and 7 beats (hook, setup, rising tension, reveal, climax, aftermath, outro). Each beat has a word budget, `place`, `sees`, `change`, `detail`, and the ending is planned with a `plant` and a `payoff`. Code checks the outline for holes and asks for up to two repairs, each kept only if it leaves fewer holes (`pipeline.build_outline`).
 3. **Write.** `Drafter.draft` writes each beat with retrieval per beat, a rolling word budget and a rolling summary labelled "already told", and one corrective retry.
 4. **Refine** (`Refiner.run`):
    - polish each section on its own;
-   - one critic call lists logic holes in the whole script, and code adds holes the critic can miss (a dropped object used again, a recurring detail past its limit); the section with the most issues is rewritten (plus every section with an over-used detail), and a logic rewrite is dropped only if a second critic call finds more holes than before;
+   - a tracker call (`prompts/stages/tracker.md`) writes one line per section (place, what the narrator holds, who is present), then one critic call compares those lines and lists logic holes in the whole script, and code adds holes the critic can miss (a dropped object used again, a recurring detail past its limit); the section with the most issues is rewritten (plus every section with an over-used detail), and a logic rewrite is dropped only if a second critic call finds more holes than before;
    - the last section is written several ways and the pairwise judge keeps the best;
    - the repeat guard removes repeated paragraphs, retellings in new words and repeated sentences;
-   - the length fit steers the total to within 5% of the target.
+   - `fix_overuse` rewrites up to 4 sections that still hold an over-used detail, a crutch word or a phrase returning in the same words (the brief's own words and the outline's details are the setting and are skipped);
+   - the length fit steers the total to within 5% of the target;
+   - `checks.trim_tics` then cuts repeated SFX/B-ROLL cues and later uses of the words in `checks.trim_words` by rule (no model call).
 5. **Verify** (grounded genres only). The model tags facts `[S#]` and wraps anything it invents as `{{INVENTED: ...}}`; a Verify step re-checks every cited sentence and every sentence naming something without a citation against the lore (at most 40 checks).
 6. **Package and report.** Titles, thumbnails, chapters, description, tags, and a Checks section with every measurement.
 

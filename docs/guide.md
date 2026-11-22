@@ -45,6 +45,7 @@ Every output also reports:
 - word-count accuracy and average sentence length;
 - the repeated-phrase rate, and the same rate outside the setting words (a repeated phrase holding a word from the brief or the outline's place, sees or detail does not count there, because a night-shift story will keep saying "monitor" and "fan"); flagged above `checks.repeat_flag` = 3%;
 - details that return in the same words, and the paragraphs that bring back each outline detail (flagged above `checks.motif_max` = 4);
+- crutch words and phrases that return in the same words are rewritten (`checks.crowd_min`, `checks.wording_max` = 2); the last tic modifiers in `checks.trim_words` stay `checks.trim_keep` = 2 times and a repeated SFX/B-ROLL cue stays twice;
 - banned-phrase hits, passages with over 80% 5-gram overlap with a source, crutch words, past/present tense switches and `[PAUSE]` density.
 
 The weakest-section rewrite fixes tense, `[PAUSE]`, repeat and logic problems automatically; the rest only report.
