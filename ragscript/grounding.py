@@ -31,7 +31,9 @@ def wrap(sentence):
 
 
 def relabel(text):
-    """A {{...}} the model wrote without the INVENTED: label is the mark it meant, so it gets the label."""
+    """A {{...}} the model wrote without the INVENTED: label (or with a misspelt one, "INVERTED:") is the mark it
+    meant, so it gets the label."""
+    text = re.sub(r"\{\{\s*(?!invented\s*:)inv\w*\s*:", "{{INVENTED:", text, flags=re.I)
     return re.sub(r"\{\{\s*(?!invented\s*:)(.*?)\}\}", r"{{INVENTED: \1}}", text, flags=re.S | re.I)
 
 

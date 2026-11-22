@@ -35,6 +35,7 @@ Measured on this machine (`num_ctx` 16384). Single runs; quality metrics swing a
 | Three briefs (horror, history, Cthulhu), 5 min, target 750 | accuracy 97.1% mean (736-780 words), repeats 3.1%, no tense switches, 1.0 `[PAUSE]` per minute, sentences 15.6 words |
 | Ten briefs (`cli.py eval --ids b01,...,b10 --minutes 5`), latest code | accuracy 98.2%, repeats 2.2% (0.8% outside the setting words), sentences 16.0 words, no detail over its limit, no tense switches; retrieval hit 9 of 10 |
 | Same ten scripts read by me with the six-area reader prompt (1-5 each, 30 total) | mean 18.6 of 30 (range 16-20, four scripts at 20); over four runs 17.3, 17.5, 18.6, 18.6. One reader, so it is a trend, not a measurement; Prose is 2 on all ten |
+| Second set of ten (`b18`-`b27`: four Machen-style horror, three War of the Worlds sci-fi, three history), 5 min | accuracy 97.7%, repeats 2.3% (1.5% outside the setting words), sentences 15.4 words, no tense switches; retrieval hit 9 of 10; my reader score 15.9 of 30 (range 12-20). The sci-fi scripts score lowest: they drift into modern settings (trucks, phones, a London flat) instead of Wells's period |
 | History 5-min script with Verify | 722 words (96.3%), repeats 4.3%, 14 sentences marked `{{INVENTED}}` |
 | Speed | about 2.5-7 min per 5-min script (about 1 more with the ending choice); decode-bound at ~40-45 tokens/s |
 | Offline tests (no GPU, no Ollama) | 116 pass, including an end-to-end repeat guard that fails if the dedupe is removed |

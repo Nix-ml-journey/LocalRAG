@@ -85,3 +85,54 @@
   minutes: 10
   brief: A widow keeps setting a second place at the table and the neighbours slowly start to ask why. She explains nothing at first, and the reason comes out through small daily habits rather than speeches.
   expect_sources: [literary]
+# b18-b27: the second set of ten, written after the Machen and Wells ingest (horror, sci-fi) and for the history lore notes the first set never used.
+- id: b18
+  genre: horror
+  minutes: 10
+  brief: A surveyor walking the Welsh hills finds a footpath that is on no map and leads to a ring of stones. Each time he turns back, the path is a little shorter, and the village below no longer answers his lantern.
+  expect_sources: [machen_]
+- id: b19
+  genre: horror
+  minutes: 10
+  brief: A London doctor agrees to a small operation on a young woman's brain that will let her see what lies behind ordinary things. Afterward she is calm and unafraid, and the people who meet her are not.
+  expect_sources: [machen_]
+- id: b20
+  genre: horror
+  minutes: 10
+  brief: A man inherits the green notebook of a country girl who wrote about the games she played alone in the woods. The games are described in careful detail, and the last page is dated tomorrow.
+  expect_sources: [machen_]
+- id: b21
+  genre: horror
+  minutes: 10
+  brief: A London clerk follows a stranger home through the back streets after dark and is invited in. The house is full of other men who followed the same stranger, and none of them has left.
+  expect_sources: [machen_]
+- id: b22
+  genre: sci-fi
+  minutes: 10
+  brief: A man in a quiet English town sees a cylinder fall on the common at night. By morning a crowd has gathered, the lid has begun to turn, and he is the only one who thinks they should go home.
+  expect_sources: [wells_The_War_of_the_Worlds]
+- id: b23
+  genre: sci-fi
+  minutes: 10
+  brief: A survivor hides in the ruins of a house while red weed creeps over the garden and the machines walk past outside. He has food for a few days, a stranger sharing the cellar, and the sound of something digging.
+  expect_sources: [wells_The_War_of_the_Worlds]
+- id: b24
+  genre: sci-fi
+  minutes: 10
+  brief: A man walks into an empty London after the machines have stopped. The streets are silent, the dogs are feeding, and he cannot tell whether the silence means the end or a pause.
+  expect_sources: [wells_The_War_of_the_Worlds]
+- id: b25
+  genre: history
+  minutes: 10
+  brief: A coastal police archivist reviews the man found dead on Somerton beach in Adelaide in 1948. She goes through his clothes, the scrap of paper in his pocket and the suitcase at the station, and says which explanations the record supports.
+  expect_sources: [lore_somerton_man]
+- id: b26
+  genre: history
+  minutes: 10
+  brief: A shipping clerk in Durban reads the file on the steamer Waratah, which sailed for Cape Town in July 1909 and was never seen again. He lists what the search found, what the inquiry concluded and what nobody could explain.
+  expect_sources: [lore_ss_waratah]
+- id: b27
+  genre: history
+  minutes: 10
+  brief: A rare-books librarian studies the Voynich manuscript at Yale. She describes the pages, the unknown script and the plants nobody can name, and separates what the evidence shows from the theories people want to be true.
+  expect_sources: [lore_voynich_manuscript]

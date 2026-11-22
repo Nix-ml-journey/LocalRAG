@@ -188,6 +188,7 @@ def test_unlabelled_double_braces_become_invented_marks_and_never_reach_clean_na
     fixed = refine.clean_draft("Plain. {{I sat in my office.}} {{invented: kept}} Done.")
     assert fixed == "Plain. {{INVENTED: I sat in my office.}} {{invented: kept}} Done."
     assert grounding.clean_narration("A {{stray}} word {{INVENTED: x}}.") == "A stray word x."
+    assert refine.clean_draft("A. {{INVERTED: I felt it.}}") == "A. {{INVENTED: I felt it.}}"  # a misspelt label
 
 
 def test_llm_client_gets_the_configured_timeout():
