@@ -49,7 +49,7 @@
   genre: horror
   minutes: 20
   brief: A man discovers that his own handwriting appears in letters he never wrote, dated decades before he was born. He traces the letters to an old address and finds that someone there has been answering them.
-  expect_sources: [hooks_openers, horror_lighthouse_log]
+  expect_sources: [hooks_openers]
 - id: b11
   genre: history
   minutes: 10

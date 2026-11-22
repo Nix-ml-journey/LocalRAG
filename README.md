@@ -31,7 +31,7 @@ Measured on this machine (`num_ctx` 16384). Single runs; quality metrics swing a
 
 | Check | Result |
 |---|---|
-| Retrieval, 17 briefs (`cli.py eval --retrieval-only`) | right source at top 1: 0.87, top 3: 0.91, top 10: 0.91; 16 of 17 briefs hit. Re-measured after the Buffalo Hunter Hunter was added; Machen and Wells came after and were not re-measured |
+| Retrieval, 17 briefs (`cli.py eval --retrieval-only`) | right source at top 1: 0.91, top 3: 0.95, top 10: 1.00; 16 of 17 briefs hit (a hit means the source is within the chunks a script is given). Re-measured after the Machen and Wells ingest; the one miss is b10, whose only expected source, the generic `hooks_openers`, ranks 9th |
 | Three briefs (horror, history, Cthulhu), 5 min, target 750 | accuracy 97.1% mean (736-780 words), repeats 3.1%, no tense switches, 1.0 `[PAUSE]` per minute, sentences 15.6 words |
 | Ten briefs (`cli.py eval --ids b01,...,b10 --minutes 5`), latest code | accuracy 98.2%, repeats 2.2% (0.8% outside the setting words), sentences 16.0 words, no detail over its limit, no tense switches; retrieval hit 9 of 10 |
 | Same ten scripts read by me with the six-area reader prompt (1-5 each, 30 total) | mean 18.6 of 30 (range 16-20, four scripts at 20); over four runs 17.3, 17.5, 18.6, 18.6. One reader, so it is a trend, not a measurement; Prose is 2 on all ten |
