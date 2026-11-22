@@ -184,7 +184,7 @@ class Pipeline:
         safe = checks.dedupe(script, ck)  # final safety net: nothing repeated may reach the output
         if lost := checks.spoken_count(script) - checks.spoken_count(safe):
             notes.append(f"Final repeat guard removed {lost} words after the length fit.")
-        script = checks.tidy(safe)  # dedupe can leave a leading space where it cut a sentence
+        script = checks.tidy(checks.trim_tics(safe, ck))  # dedupe can leave a leading space where it cut a sentence
         if not g.grounded:  # [S#] tags only help fact-checking; ungrounded stories get them leaked by the model
             script = re.sub(r"[ \t]*\[S\d+\]", "", script)
         if g.grounded and ledger.cited_text:

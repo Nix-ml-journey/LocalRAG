@@ -222,7 +222,8 @@ def test_best_ending_keeps_a_challenger_only_when_it_wins_in_both_orders(tmp_pat
                                 genre=SimpleNamespace(slug="horror"))
         return Refiner(ask, pl.cfg, []).best_ending(parts, story), asked, story.notes
 
-    parts = ["I stood in the booth."] * 3 + ["I heard the lock and the dark closed over the booth and nothing moved."]
+    parts = ["I stood in the booth by the door and the brass key."] * 3 + [
+        "I heard the lock and the dark closed over the booth and nothing moved."]
     # the challenger wins both orders: it is "B" when it comes second and "A" when it comes first
     prefer_second = lambda v: compare_reply("B" if "closed the door" not in v["script_a"] else "A")
     out, asked, notes = run(prefer_second, parts)

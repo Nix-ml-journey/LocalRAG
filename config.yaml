@@ -61,6 +61,8 @@ checks:
   repeat_flag: 0.03         # a script repeating more than this share of phrases outside the setting words is flagged
   motif_max: 4              # a detail may return this often in the script; more is flagged (the same wording twice is listed)
   wording_max: 2            # a phrase that returns in the same words more often than this is rewritten away
+  trim_words: [heavy, rhythmic, deliberate, steady, metallic]   # tic modifiers: kept trim_keep times in the finished script, later ones before a noun are cut
+  trim_keep: 2
   crowd_min: 5              # a crutch word (5+ letters) is used this often in the script ...
   crowd_share: 0.006        # ... and makes up more than this share of all words
 

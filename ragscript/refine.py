@@ -242,7 +242,9 @@ class Refiner:
                                  temperature=0.9, max_tokens=int(words * 2.2)),
                 lambda t: (ln["polish_min"] * words <= checks.spoken_count(t) <= ln["polish_max"] * words
                            and len(final_issues(t, before, self.cfg, self.banned)) <=
-                           len(final_issues(best, before, self.cfg, self.banned))))
+                           len(final_issues(best, before, self.cfg, self.banned))
+                           and len(logic.new_in_ending(f"{before}\n\n{t}")) <=
+                           len(logic.new_in_ending(f"{before}\n\n{best}"))))  # no new object in the last image
             if kept and new != best and self.judge(f"{before}\n\n{best}", f"{before}\n\n{new}", story) == "B":
                 best, won = new, won + 1
         if won:

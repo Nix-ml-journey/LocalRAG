@@ -237,3 +237,19 @@ def test_snake_case_leaks_become_words_and_a_third_person_ending_is_flagged():
     mine = "I walked down the long hall and I listened to the quiet room around me for a very long time."
     text = "\n\n".join([mine] * 4 + ["The next morning a courier found the desk empty and the old letters lying in gray dust."])
     assert logic.left_first_person(text) and not logic.left_first_person(text.replace("The next morning a", "I saw a"))
+
+
+def test_trim_tics_keeps_two_uses_cuts_later_ones_before_a_noun_and_repeated_cues():
+    ck = {"trim_words": ["heavy"], "trim_keep": 2}
+    text = ("Heavy boots hit the floor. A heavy door shut. The heavy key fell. Heavy rain came. The air felt heavy. "
+            "[SFX: rustle] a [SFX: rustle] b [SFX: rustle] c")
+    out = checks.trim_tics(text, ck)
+    assert out.startswith("Heavy boots hit the floor. A heavy door shut. The key fell. Rain came.")
+    assert "felt heavy." in out, "after a verb the word is not before a noun and stays"
+    assert out.count("[SFX: rustle]") == 2
+
+
+def test_trim_tics_never_cuts_a_word_that_ends_its_clause_before_a_preposition():
+    ck = {"trim_words": ["heavy"], "trim_keep": 0}
+    assert checks.trim_tics("The cloth felt heavy in their grip and heavy on my arm.", ck) == \
+        "The cloth felt heavy in their grip and heavy on my arm."

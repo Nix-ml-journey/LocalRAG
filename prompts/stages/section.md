@@ -33,7 +33,7 @@ Rules:
 Rhythm example (shows sentence length only; never copy its wording or content):
 Too choppy: The door was old. It creaked. I pushed it open. Dust fell. The room was dark. I stepped inside.
 Right: The old door creaked as I pushed it open, and a thin curtain of dust drifted down past the lantern light. I stepped into the dark room. Nothing moved.
-Join an action to its detail with "and", "as", "while" or "because" instead of a full stop.
+Join an action to its detail with "and", "because" or a comma instead of a full stop; use "as" or "while" at most once in a paragraph.
 - Every sentence must add something new: an action, a detail or a thought. Never restate what was already said, in this section or in earlier ones.
 - Recurring details (a sound, smell or object from the narrator bible or an earlier section) are welcome: they make the place real. Use each at most 4 times in the whole story, never in two sections in a row. Each return must change: how it sounds or feels, what it does to the narrator, or what it means. Never repeat an earlier sentence or its opening words, and do not start two paragraphs with the same words.
 Recurring-detail example (shows the idea only; never copy its wording or content):
@@ -44,5 +44,5 @@ Right: The hum of the vents filled the room as I watched the screen. (later) The
 - Start with a new event, place or moment that is not in the story so far. Do not summarize the story, do not repeat earlier beats, do not resolve beyond this beat.
 - Cues go on their own line and sparingly: at most <<max_pause>> [PAUSE] (only right before a reveal), and [SFX: description] or [B-ROLL: description] only when it adds something the words do not. The only square-bracket items allowed are these cues and [S#] lore tags; never write notes such as [recurring] or [detail].
 - If the genre rules contain a GROUNDED rule, obey it strictly (facts only from the lore chunks, invented details wrapped as {{INVENTED: ...}}).
-- Before you answer, silently count the words in your sentences; if the average is under 10, merge neighbouring sentences with "and", "as", "while" or "because" and recount. Do not mention the count.
+- Before you answer, silently count the words in your sentences; if the average is under 10, merge neighbouring sentences with "and", "because" or a comma (at most one "as" or "while" per paragraph) and recount. Do not mention the count.
 - No title, no headings, no commentary. Output only the narration.

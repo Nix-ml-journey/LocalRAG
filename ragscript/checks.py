@@ -136,6 +136,38 @@ def tidy(text):
     return re.sub(r"\n{3,}", "\n\n", t).strip()
 
 
+_CUE_TAG = re.compile(r"\[(?:SFX|B-ROLL):[^\]]*\]")
+
+
+def trim_tics(text, ck):
+    """The tics a small model repeats, cut by rule with no model call: an SFX or B-ROLL cue repeated word for word
+    stays twice, and each word in `checks.trim_words` ("heavy", "rhythmic") stays `trim_keep` times; later uses are
+    dropped only where the word sits before its noun ("heavy boots"), never after a verb ("felt heavy")."""
+    seen = Counter()
+
+    def cue(m):
+        seen[m.group(0).lower()] += 1
+        return m.group(0) if seen[m.group(0).lower()] <= 2 else ""
+
+    text = _CUE_TAG.sub(cue, text)
+    skip = FUNC | {"and", "but", "the", "his", "her", "its", "our", "for", "was", "were", "had", "has", "not", "off",
+                   "in", "on", "at", "by", "to", "of", "as", "or", "so", "if", "like", "against", "across", "toward",
+                   "beneath", "under", "inside", "near", "around", "through", "within", "upon", "behind", "above"}
+    for w in ck["trim_words"]:
+        uses = 0
+
+        def drop(m):
+            nonlocal uses
+            uses += 1
+            nxt = m.group(1)
+            if uses <= ck["trim_keep"] or not nxt or nxt.strip().lower() in skip:
+                return m.group(0)
+            return nxt.strip().capitalize() if m.group(0)[0].isupper() else nxt.strip()
+
+        text = re.sub(rf"(?i)\b{w}\b(\s+[a-z][a-z-]+)?", drop, text)
+    return re.sub(r"[ \t]{2,}", " ", text)
+
+
 def avg_sentence_words(text) -> float:
     """Average spoken words per sentence (cues and INVENTED markers ignored). Natural narration sits near 10-15;
     below ~7 it sounds like a string of fragments, above ~20 it reads like a book."""
